@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Eye, CheckCircle, XCircle, AlertTriangle, X, FileText, RotateCcw, RotateCw, Send, ExternalLink, Copy, Check } from 'lucide-react';
+import { Eye, CheckCircle, XCircle, AlertTriangle, X, FileText, RotateCcw, RotateCw, Send, ExternalLink, Copy, Check, UserCheck, Mail, Phone } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
+import { IdentityComparisonModal } from './IdentityComparisonModal';
+import { getOptimizedWebpUrl } from '../../utils/imageOptimizer';
 
 export const DocumentPreview: React.FC = () => {
   const { 
@@ -8,7 +10,9 @@ export const DocumentPreview: React.FC = () => {
     selectedVerificationId, 
     approveVerification, 
     rejectVerification, 
-    resetVerification 
+    resetVerification,
+    isComparisonModalOpen,
+    setIsComparisonModalOpen
   } = useAdmin();
   const [rejectReason, setRejectReason] = useState('');
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
@@ -39,50 +43,102 @@ export const DocumentPreview: React.FC = () => {
     setTimeout(() => setFeedbackMessage(null), 3000);
   };
 
-  const handleReject = async () => {
-    await rejectVerification(selectedItem.id, rejectReason || 'Document criteria not met');
-    setFeedbackMessage(`Rejected ${selectedItem.name}'s document`);
+  const handleRejectById = async (targetId: string, reason?: string, docLabel?: string) => {
+    await rejectVerification(targetId, reason || 'Document criteria not met');
+    setFeedbackMessage(`Rejected ${selectedItem.name}'s ${docLabel || 'document'}`);
     setRejectReason('');
     setTimeout(() => setFeedbackMessage(null), 3000);
   };
 
-  const handleReset = async () => {
-    await resetVerification(selectedItem.id);
-    setFeedbackMessage(`Reset ${selectedItem.name}'s document to Pending Review`);
+  const handleReject = async () => {
+    const targetDocId = (idSide === 'back' && selectedItem.secondaryDocumentId)
+      ? selectedItem.secondaryDocumentId
+      : selectedItem.id;
+    const targetLabel = (idSide === 'back' && hasSecondary) ? secondaryDocLabel : primaryDocLabel;
+    await handleRejectById(targetDocId, rejectReason, targetLabel);
+  };
+
+  const handleResetById = async (targetId: string, docLabel?: string) => {
+    await resetVerification(targetId);
+    setFeedbackMessage(`Reset ${selectedItem.name}'s ${docLabel || 'document'} to Pending Review`);
     setTimeout(() => setFeedbackMessage(null), 3000);
   };
 
-  const ocrData = selectedItem.ocrExtractedData;
+  const handleReset = async () => {
+    const targetDocId = (idSide === 'back' && selectedItem.secondaryDocumentId)
+      ? selectedItem.secondaryDocumentId
+      : selectedItem.id;
+    const targetLabel = (idSide === 'back' && hasSecondary) ? secondaryDocLabel : primaryDocLabel;
+    await handleResetById(targetDocId, targetLabel);
+  };
 
-  // Dual-sided support (e.g. National ID Front & Back)
-  const hasBackImage = Boolean(selectedItem.documentImageBack);
-  const activeImageUrl = (idSide === 'back' && hasBackImage)
-    ? selectedItem.documentImageBack
+  // Dual-sided or dual-clearance package document resolution
+  const hasSecondary = Boolean(selectedItem.secondaryDocumentImage || selectedItem.documentImageBack);
+  const secondaryImageUrl = selectedItem.secondaryDocumentImage || selectedItem.documentImageBack;
+
+  const isKasambahayPackage = selectedItem.role?.toUpperCase() === 'KASAMBAHAY' || Boolean(selectedItem.isPackage);
+  const primaryDocLabel = isKasambahayPackage ? 'NBI Clearance' : 'Front Side';
+  const secondaryDocLabel = isKasambahayPackage ? 'Police Clearance' : 'Back Side';
+
+  const activeImageUrl = (idSide === 'back' && hasSecondary)
+    ? (secondaryImageUrl || selectedItem.documentImage)
     : selectedItem.documentImage;
 
   // Dynamic values strictly extracted from OCR or verified record (zero hardcoded values)
-  const isNationalId = selectedItem.documentType?.toLowerCase().includes('national id') || (selectedItem.rawDocumentType || '').toLowerCase().includes('national_id') || hasBackImage;
+  const isNationalId = selectedItem.documentType?.toLowerCase().includes('national id') || (selectedItem.rawDocumentType || '').toLowerCase().includes('national_id') || (!isKasambahayPackage && hasSecondary);
   
+  // Active OCR Data and active metadata depending on selected tab (front vs back / NBI vs Police)
+  const activeOcrData = (idSide === 'back' && hasSecondary && selectedItem.secondaryOcrData)
+    ? selectedItem.secondaryOcrData
+    : (selectedItem.ocrExtractedData || {});
+
   // OCR Name extraction: strictly from OCR data, never falling back to profile username/account name
   const ocrExtractedName = 
-    ocrData?.full_name ||
-    [ocrData?.first_name, ocrData?.middle_name, ocrData?.last_name].filter(Boolean).join(' ') ||
-    (ocrData?.name ? String(ocrData.name) : undefined);
+    activeOcrData?.full_name ||
+    [activeOcrData?.first_name, activeOcrData?.middle_name, activeOcrData?.last_name].filter(Boolean).join(' ') ||
+    (activeOcrData?.name ? String(activeOcrData.name) : undefined);
   const idName = ocrExtractedName || 'Not Detected in OCR';
 
-  const docNumber = ocrData?.clearance_number || ocrData?.philsys_number || ocrData?.document_number || selectedItem.documentNumber || 'Not Detected';
+  const docNumber = (idSide === 'back' && hasSecondary && selectedItem.secondaryDocumentNumber)
+    ? selectedItem.secondaryDocumentNumber
+    : (activeOcrData?.clearance_number || activeOcrData?.philsys_number || activeOcrData?.document_number || selectedItem.documentNumber || 'Not Detected');
   
   // PhilSys National IDs do not have an issuance date printed on the card
   const issuedDate = isNationalId 
     ? 'N/A (PhilSys National ID)' 
-    : (ocrData?.date_issued || selectedItem.issuedDate || 'Not Detected');
+    : ((idSide === 'back' && hasSecondary && selectedItem.secondaryIssuedDate)
+        ? selectedItem.secondaryIssuedDate
+        : (activeOcrData?.date_issued || selectedItem.issuedDate || 'Not Detected'));
   
-  const rawValidity = ocrData?.valid_until || selectedItem.validityDate;
+  const rawValidity = (idSide === 'back' && hasSecondary && selectedItem.secondaryValidityDate)
+    ? selectedItem.secondaryValidityDate
+    : (activeOcrData?.valid_until || selectedItem.validityDate);
   const validityDate = isNationalId 
     ? 'Permanent' 
     : (rawValidity && rawValidity !== 'Not Detected' ? rawValidity : 'Not Detected');
 
-  const resolvedIdType = isNationalId ? 'National ID' : (selectedItem.documentType || ocrData?.document_type_label || 'Government ID');
+  const resolvedIdType = (idSide === 'back' && hasSecondary)
+    ? (selectedItem.secondaryDocumentType || secondaryDocLabel)
+    : (isNationalId ? 'National ID' : (selectedItem.documentType === 'Clearances (NBI + Police)' ? primaryDocLabel : selectedItem.documentType || 'Government ID'));
+
+  const activeDocLabel = resolvedIdType;
+
+  // Tab-specific document status and rejection notes
+  const isPrimaryRejected = selectedItem.primaryStatus === 'REJECTED' || (selectedItem.status === 'REJECTED' && selectedItem.secondaryStatus !== 'REJECTED');
+  const isSecondaryRejected = selectedItem.secondaryStatus === 'REJECTED';
+  const isPrimaryVerified = selectedItem.primaryStatus === 'VERIFIED' || (selectedItem.status === 'VERIFIED' && !isPrimaryRejected);
+  const isSecondaryVerified = selectedItem.secondaryStatus === 'VERIFIED' || (selectedItem.status === 'VERIFIED' && !isSecondaryRejected);
+
+  const currentDocStatus = (idSide === 'back' && hasSecondary)
+    ? (selectedItem.secondaryStatus || 'PENDING / REVIEW')
+    : (selectedItem.primaryStatus || (selectedItem.secondaryStatus === 'REJECTED' ? 'PENDING / REVIEW' : selectedItem.status) || 'PENDING / REVIEW');
+
+  const currentDocNotes = (idSide === 'back' && hasSecondary)
+    ? (selectedItem.secondaryNotes || (selectedItem.secondaryStatus === 'REJECTED' ? selectedItem.notes : undefined))
+    : selectedItem.notes;
+
+  const otherDocRejected = hasSecondary && (idSide === 'front' ? isSecondaryRejected : isPrimaryRejected);
+  const otherDocLabel = idSide === 'front' ? secondaryDocLabel : primaryDocLabel;
 
   const docTypeLower = (selectedItem.documentType || selectedItem.rawDocumentType || resolvedIdType || '').toLowerCase();
   const isNbi = docTypeLower.includes('nbi');
@@ -133,17 +189,58 @@ export const DocumentPreview: React.FC = () => {
             </div>
           )}
 
+          {/* Dual-document switcher toggle if secondary doc exists */}
+          {hasSecondary && (
+            <div className="flex items-center justify-between mt-3 mb-1 px-1">
+              <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider font-display">
+                {isKasambahayPackage ? 'Statutory Clearances' : 'Document Scan'}
+              </span>
+              <div className="flex items-center bg-[#F0F0EC] p-0.5 rounded-full">
+                <button
+                  type="button"
+                  onClick={() => setIdSide('front')}
+                  className={`px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer border-0 flex items-center gap-1.5 ${
+                    idSide === 'front' ? 'bg-[#0D0D11] text-white shadow-xs' : 'text-zinc-600 hover:text-zinc-900'
+                  }`}
+                >
+                  {isPrimaryRejected ? (
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
+                  ) : isPrimaryVerified ? (
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                  ) : null}
+                  <span>{primaryDocLabel}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIdSide('back')}
+                  className={`px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer border-0 flex items-center gap-1.5 ${
+                    idSide === 'back' ? 'bg-[#0D0D11] text-white shadow-xs' : 'text-zinc-600 hover:text-zinc-900'
+                  }`}
+                >
+                  {isSecondaryRejected ? (
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
+                  ) : isSecondaryVerified ? (
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                  ) : null}
+                  <span>{secondaryDocLabel}</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Clean Scanned Image Preview Card */}
           <div 
             onClick={() => setShowImageModal(true)}
             className="relative mt-2 rounded-3xl overflow-hidden bg-zinc-100 hover:bg-zinc-200/70 transition-colors group cursor-pointer"
             title="Click to expand full resolution scan"
           >
-            {selectedItem.documentImage ? (
+            {activeImageUrl ? (
               <div className="relative h-[220px] flex items-center justify-center p-3">
                 <img
-                  src={selectedItem.documentImage}
-                  alt={`${selectedItem.name} ${selectedItem.documentType}`}
+                  src={getOptimizedWebpUrl(activeImageUrl, { width: 800, quality: 'auto' })}
+                  alt={`${selectedItem.name} ${resolvedIdType}`}
+                  loading="lazy"
+                  decoding="async"
                   className="w-full h-full object-contain group-hover:scale-102 transition-transform duration-200 rounded-2xl"
                 />
                 <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 text-white text-xs font-bold font-display backdrop-blur-[2px]">
@@ -159,16 +256,51 @@ export const DocumentPreview: React.FC = () => {
             )}
           </div>
 
+          {/* Compact one-line status note below image */}
+          {currentDocStatus === 'REJECTED' ? (
+            <div className="mt-2 px-1 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 text-xs text-rose-600 font-medium">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
+                <span>
+                  {currentDocNotes
+                    ? `Rejected · ${currentDocNotes}`
+                    : 'This document was rejected'}
+                </span>
+              </div>
+            </div>
+          ) : otherDocRejected ? (
+            <div className="mt-2 px-1 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 text-xs text-zinc-500 font-medium">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
+                <span>{otherDocLabel} rejected</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIdSide(idSide === 'front' ? 'back' : 'front')}
+                className="text-xs font-bold text-[#E07A38] hover:underline cursor-pointer border-0 bg-transparent shrink-0"
+              >
+                Review →
+              </button>
+            </div>
+          ) : null}
+
           {/* User Metadata & Face Liveness Card */}
           <div className="mt-6 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 min-w-[48px] min-h-[48px] max-w-[48px] max-h-[48px] rounded-full overflow-hidden shrink-0 bg-zinc-200 flex items-center justify-center">
+                {/* Interactive Clickable Profile Picture */}
+                <div 
+                  onClick={() => setIsComparisonModalOpen(true)}
+                  className="w-12 h-12 min-w-[48px] min-h-[48px] max-w-[48px] max-h-[48px] rounded-full overflow-hidden shrink-0 bg-zinc-200 flex items-center justify-center relative group cursor-pointer ring-2 ring-transparent hover:ring-[#FFB380] transition-all shadow-xs"
+                  title="Click to compare face with submitted document"
+                >
                   {selectedItem.avatar ? (
                     <img
-                      src={selectedItem.avatar}
+                      src={getOptimizedWebpUrl(selectedItem.avatar, { width: 120, height: 120, quality: 'auto' })}
                       alt={selectedItem.name}
-                      className="w-full h-full object-cover"
+                      loading="lazy"
+                      decoding="async"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                       onError={(e) => {
                         (e.target as HTMLElement).style.display = 'none';
                       }}
@@ -178,16 +310,44 @@ export const DocumentPreview: React.FC = () => {
                       {selectedItem.name.slice(0, 2).toUpperCase()}
                     </span>
                   )}
+                  {/* Hover lens indicator */}
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white backdrop-blur-[1px] rounded-full">
+                    <Eye className="w-4 h-4 text-[#FFB380]" />
+                  </div>
                 </div>
+
                 <div>
                   <h4 className="text-base font-black font-display text-[#0D0D11]">
                     {selectedItem.name}
                   </h4>
-                  <span className="inline-block text-[10px] font-black uppercase px-2 py-0.5 rounded-full mt-0.5 bg-zinc-100 text-zinc-600">
+                  {selectedItem.email && (
+                    <p className="text-[11px] text-zinc-500 flex items-center gap-1 mt-0.5 font-medium">
+                      <Mail className="w-3 h-3 text-zinc-400 shrink-0" />
+                      <span className="truncate max-w-[200px]">{selectedItem.email}</span>
+                    </p>
+                  )}
+                  {selectedItem.contactNumber && (
+                    <p className="text-[11px] text-zinc-500 flex items-center gap-1 mt-0.5 font-medium">
+                      <Phone className="w-3 h-3 text-zinc-400 shrink-0" />
+                      <span className="font-mono">{selectedItem.contactNumber}</span>
+                    </p>
+                  )}
+                  <span className="inline-block text-[10px] font-black uppercase px-2 py-0.5 rounded-full mt-1 bg-zinc-100 text-zinc-600">
                     {selectedItem.role}
                   </span>
                 </div>
               </div>
+
+              {/* Compare Face Action Pill */}
+              <button
+                type="button"
+                onClick={() => setIsComparisonModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#FFF4ED] hover:bg-[#FFE5D6] text-[#E07A38] hover:text-[#C86423] rounded-full text-[11px] font-black font-display transition-all cursor-pointer border-0 shadow-xs"
+                title="Open Side-by-Side Face & Identity Comparison"
+              >
+                <UserCheck className="w-3.5 h-3.5" />
+                <span>Compare Face</span>
+              </button>
             </div>
 
             {/* Details list (Clean, airy key-value block without grey zebra stripes) */}
@@ -255,10 +415,10 @@ export const DocumentPreview: React.FC = () => {
               <div className="flex justify-between items-center py-0.5">
                 <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider font-display">Status</span>
                 <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider font-display ${
-                  selectedItem.status === 'VERIFIED' ? 'bg-emerald-50 text-emerald-700' :
-                  selectedItem.status === 'REJECTED' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-800'
+                  currentDocStatus === 'VERIFIED' ? 'bg-emerald-50 text-emerald-700' :
+                  currentDocStatus === 'REJECTED' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-800'
                 }`}>
-                  {selectedItem.status === 'PENDING / REVIEW' ? 'In Review' : selectedItem.status}
+                  {currentDocStatus === 'PENDING / REVIEW' ? 'In Review' : currentDocStatus}
                 </span>
               </div>
             </div>
@@ -282,16 +442,25 @@ export const DocumentPreview: React.FC = () => {
 
         {/* Action Buttons & Status Lifecycle Controls */}
         <div className="mt-6 pt-4 space-y-3">
-          {selectedItem.status === 'REJECTED' ? (
+          {currentDocStatus === 'REJECTED' ? (
             <div className="space-y-3">
               <div className="p-3.5 bg-rose-50 rounded-2xl text-xs text-rose-800">
-                <div className="font-black font-display flex items-center gap-1.5 text-rose-700">
-                  <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
-                  <span>Document Currently Rejected</span>
+                <div className="font-black font-display flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-rose-700">
+                    <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                    <span>{hasSecondary ? activeDocLabel : 'Document'} Currently Rejected</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleReset}
+                    className="text-[11px] font-bold text-rose-700 hover:underline cursor-pointer border-0 bg-transparent"
+                  >
+                    Reset to Review
+                  </button>
                 </div>
-                {selectedItem.notes && (
+                {currentDocNotes && (
                   <p className="mt-1 text-[11px] text-rose-600 font-medium pl-5">
-                    Reason: {selectedItem.notes}
+                    Reason: {currentDocNotes}
                   </p>
                 )}
               </div>
@@ -316,17 +485,17 @@ export const DocumentPreview: React.FC = () => {
                 </button>
               </div>
             </div>
-          ) : selectedItem.status === 'VERIFIED' ? (
+          ) : currentDocStatus === 'VERIFIED' ? (
             <div className="space-y-3">
               <div className="p-3.5 bg-emerald-50 rounded-2xl text-xs text-emerald-800 flex items-center justify-between">
                 <div className="flex items-center gap-2 font-black font-display">
                   <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Document Verified</span>
+                  <span>{hasSecondary ? activeDocLabel : 'Document'} Verified</span>
                 </div>
                 <button
                   type="button"
                   onClick={handleReset}
-                  className="text-[11px] font-bold text-emerald-700 hover:underline cursor-pointer"
+                  className="text-[11px] font-bold text-emerald-700 hover:underline cursor-pointer border-0 bg-transparent"
                 >
                   Re-open
                 </button>
@@ -350,7 +519,7 @@ export const DocumentPreview: React.FC = () => {
                   className="w-full py-3.5 rounded-full bg-[#0D0D11] hover:bg-black text-white text-xs font-black font-display tracking-wider uppercase transition-all cursor-pointer flex items-center justify-center gap-1.5 border-0"
                 >
                   <XCircle className="w-4 h-4" />
-                  <span>REJECT</span>
+                  <span>REJECT {hasSecondary ? activeDocLabel : ''}</span>
                 </button>
                 
                 <button
@@ -375,7 +544,7 @@ export const DocumentPreview: React.FC = () => {
                       handleReject();
                     }
                   }}
-                  placeholder="Optional rejection reason..."
+                  placeholder={`Optional rejection reason for ${hasSecondary ? activeDocLabel : 'document'}...`}
                   className="w-full py-2 bg-transparent text-xs text-zinc-800 placeholder-zinc-400 focus:outline-none font-medium border-0"
                 />
                 <button
@@ -403,7 +572,7 @@ export const DocumentPreview: React.FC = () => {
                   <h4 className="font-black font-display text-sm">{selectedItem.name} — {selectedItem.documentType}</h4>
                   <p className="text-[11px] text-zinc-400 font-medium">Authenticated Scan</p>
                 </div>
-                {hasBackImage && (
+                {hasSecondary && (
                   <div className="flex items-center gap-1 bg-zinc-800 p-1 rounded-full">
                     <button
                       type="button"
@@ -412,7 +581,7 @@ export const DocumentPreview: React.FC = () => {
                         idSide === 'front' ? 'bg-white text-zinc-900' : 'text-zinc-300 hover:text-white'
                       }`}
                     >
-                      Front Side
+                      {primaryDocLabel}
                     </button>
                     <button
                       type="button"
@@ -421,7 +590,7 @@ export const DocumentPreview: React.FC = () => {
                         idSide === 'back' ? 'bg-white text-zinc-900' : 'text-zinc-300 hover:text-white'
                       }`}
                     >
-                      Back Side
+                      {secondaryDocLabel}
                     </button>
                   </div>
                 )}
@@ -457,6 +626,55 @@ export const DocumentPreview: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Side-by-Side Face & Identity Verification Comparison Modal */}
+      <IdentityComparisonModal
+        isOpen={isComparisonModalOpen}
+        onClose={() => setIsComparisonModalOpen(false)}
+        user={{
+          name: selectedItem.name,
+          role: selectedItem.role,
+          email: selectedItem.email,
+          contactNumber: selectedItem.contactNumber,
+          avatar: selectedItem.avatar,
+          barangay: selectedItem.barangay,
+          idName: idName,
+        }}
+        document={{
+          documentType: selectedItem.documentType,
+          documentNumber: docNumber,
+          documentImage: selectedItem.documentImage,
+          documentImageBack: selectedItem.documentImageBack,
+          isPackage: selectedItem.isPackage,
+          packageLabel: selectedItem.packageLabel,
+          secondaryDocumentId: selectedItem.secondaryDocumentId,
+          secondaryDocumentImage: selectedItem.secondaryDocumentImage,
+          secondaryDocumentType: selectedItem.secondaryDocumentType,
+          secondaryDocumentNumber: selectedItem.secondaryDocumentNumber,
+          secondaryIssuedDate: selectedItem.secondaryIssuedDate,
+          secondaryValidityDate: selectedItem.secondaryValidityDate,
+          secondaryStatus: selectedItem.secondaryStatus,
+          secondaryNotes: selectedItem.secondaryNotes,
+          secondaryOcrData: selectedItem.secondaryOcrData,
+          status: selectedItem.status,
+          primaryStatus: selectedItem.primaryStatus,
+          notes: selectedItem.notes,
+          issuedDate: selectedItem.issuedDate,
+          validityDate: selectedItem.validityDate,
+          ocrExtractedData: selectedItem.ocrExtractedData,
+        }}
+        onApprove={selectedItem.status !== 'VERIFIED' ? handleApprove : undefined}
+        onReject={(reason, documentId) => {
+          const targetId = documentId || (idSide === 'back' && selectedItem.secondaryDocumentId ? selectedItem.secondaryDocumentId : selectedItem.id);
+          const targetLabel = documentId && documentId === selectedItem.secondaryDocumentId ? secondaryDocLabel : primaryDocLabel;
+          handleRejectById(targetId, reason, targetLabel);
+        }}
+        onReset={(documentId) => {
+          const targetId = documentId || (idSide === 'back' && selectedItem.secondaryDocumentId ? selectedItem.secondaryDocumentId : selectedItem.id);
+          const targetLabel = documentId && documentId === selectedItem.secondaryDocumentId ? secondaryDocLabel : primaryDocLabel;
+          handleResetById(targetId, targetLabel);
+        }}
+      />
     </>
   );
 };

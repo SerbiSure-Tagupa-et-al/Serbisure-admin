@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ChevronDown, FileText, RotateCw, Clock, CheckCircle, XCircle } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { AccountRole } from '../../types/admin';
+import { getOptimizedWebpUrl } from '../../utils/imageOptimizer';
 
 type StatusFilter = 'PENDING' | 'VERIFIED' | 'REJECTED' | 'ALL';
 
@@ -10,6 +11,7 @@ export const VerificationQueue: React.FC = () => {
     verifications, 
     selectedVerificationId, 
     setSelectedVerificationId,
+    openComparisonModal,
     isLoadingVerifications,
     refreshVerifications,
     currentRole,
@@ -43,8 +45,9 @@ export const VerificationQueue: React.FC = () => {
       return true;
     })
     .sort((a, b) => {
-      if (sortOrder === 'RECENT') return b.id.localeCompare(a.id);
-      return a.id.localeCompare(b.id);
+      const dateA = new Date(a.submittedDate).getTime() || 0;
+      const dateB = new Date(b.submittedDate).getTime() || 0;
+      return sortOrder === 'RECENT' ? dateB - dateA : dateA - dateB;
     });
 
   // Auto-select first item when filter switches if current selection is not visible
@@ -58,7 +61,7 @@ export const VerificationQueue: React.FC = () => {
   }, [statusFilter, roleFilter, filteredVerifications, selectedVerificationId, setSelectedVerificationId]);
 
   return (
-      <div className="bg-white rounded-3xl p-8 h-full flex flex-col">
+      <div className="bg-white rounded-3xl p-6 sm:p-7 h-full flex flex-col">
       {/* Header with Filters */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-5 gap-4">
         <div>
@@ -175,11 +178,11 @@ export const VerificationQueue: React.FC = () => {
         <div className="overflow-x-auto mt-2">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="text-[11px] font-black uppercase tracking-wider text-zinc-400 font-display">
-                <th className="py-3 px-3">User & Role</th>
-                <th className="py-3 px-3">Document</th>
-                <th className="py-3 px-3">Submitted</th>
-                <th className="py-3 px-3 text-right">Status</th>
+              <tr className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 font-display">
+                <th className="py-2.5 px-2.5">User & Role</th>
+                <th className="py-2.5 px-2.5">Document</th>
+                <th className="py-2.5 px-2.5">Submitted</th>
+                <th className="py-2.5 px-2.5 text-right">Status</th>
               </tr>
             </thead>
             <tbody className="text-xs space-y-1">
@@ -189,62 +192,70 @@ export const VerificationQueue: React.FC = () => {
                 return (
                   <tr
                     key={item.id}
-                    onClick={() => setSelectedVerificationId(item.id)}
-                    className={`cursor-pointer transition-all ${
+                    onClick={() => openComparisonModal(item.id)}
+                    className={`cursor-pointer transition-colors ${
                       isSelected
-                        ? 'bg-zinc-100 text-zinc-950 font-bold'
+                        ? 'bg-zinc-100 text-zinc-950'
                         : 'hover:bg-zinc-50/80 text-zinc-700'
                     }`}
+                    title="Click to inspect Face & Identity comparison"
                   >
                     {/* User & Role */}
-                    <td className="py-3 px-3 rounded-l-2xl">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 min-w-[40px] min-h-[40px] max-w-[40px] max-h-[40px] rounded-full overflow-hidden shrink-0 bg-zinc-200 flex items-center justify-center">
+                    <td className="py-2.5 px-2.5 rounded-l-2xl whitespace-nowrap">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 min-w-[32px] min-h-[32px] rounded-full overflow-hidden shrink-0 bg-zinc-100 flex items-center justify-center">
                           {item.avatar ? (
                             <img
-                              src={item.avatar}
+                              src={getOptimizedWebpUrl(item.avatar, { width: 64, height: 64, quality: 'auto' })}
                               alt={item.name}
+                              loading="lazy"
+                              decoding="async"
                               className="w-full h-full object-cover"
                               onError={(e) => {
                                 (e.target as HTMLElement).style.display = 'none';
                               }}
                             />
                           ) : (
-                            <span className="font-bold text-xs text-zinc-600">
+                            <span className="font-bold text-xs text-zinc-500">
                               {item.name.slice(0, 2).toUpperCase()}
                             </span>
                           )}
                         </div>
                         <div>
-                          <div className="font-black font-display text-sm text-[#0D0D11]">
+                          <div className="font-bold text-xs text-[#0D0D11] leading-tight">
                             {item.name}
                           </div>
-                          <span
-                            className="inline-block text-[10px] font-black uppercase px-2 py-0.5 rounded-full mt-0.5 bg-zinc-200/70 text-zinc-700"
-                          >
-                            {item.role}
-                          </span>
+                          <div className="text-[10px] text-zinc-400 font-medium mt-0.5">
+                            {item.role === 'KASAMBAHAY' ? 'Kasambahay' : item.role === 'HOMEOWNER' ? 'Homeowner' : item.role}
+                          </div>
                         </div>
                       </div>
                     </td>
 
-                    {/* Document Type */}
-                    <td className="py-3 px-3">
-                      <div className="flex items-center gap-2 font-bold text-zinc-800">
-                        <FileText className="w-4 h-4 text-zinc-400" />
-                        <span>{item.documentType}</span>
+                    {/* Document Type (Consolidated Package or Single Doc) */}
+                    <td className="py-2.5 px-2.5 whitespace-nowrap">
+                      <div className="flex items-center gap-1.5">
+                        <FileText className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                        <span className="font-medium text-xs text-zinc-800">
+                          {item.isPackage ? (item.packageLabel || item.documentType) : item.documentType}
+                        </span>
+                        {item.isPackage && (
+                          <span className="text-[10px] text-zinc-400 font-normal">
+                            · 2 docs
+                          </span>
+                        )}
                       </div>
                     </td>
 
                     {/* Submitted Date */}
-                    <td className="py-3 px-3 font-medium text-zinc-500">
-                      {item.submittedDate}
+                    <td className="py-2.5 px-2.5 text-xs font-medium text-zinc-400 whitespace-nowrap" title={item.submittedDate}>
+                      {item.submittedDate.split(' ').slice(0, 3).join(' ')}
                     </td>
 
-                    {/* Status Pill (Single line, clean) */}
-                    <td className="py-3 px-3 text-right rounded-r-2xl">
+                    {/* Status Pill (Minimal with dot indicator) */}
+                    <td className="py-2.5 px-2.5 text-right rounded-r-2xl whitespace-nowrap">
                       <span
-                        className={`inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold tracking-wide whitespace-nowrap ${
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap ${
                           item.status === 'VERIFIED'
                             ? 'bg-emerald-50 text-emerald-700'
                             : item.status === 'REJECTED'
@@ -252,7 +263,18 @@ export const VerificationQueue: React.FC = () => {
                             : 'bg-amber-50 text-amber-800'
                         }`}
                       >
-                        {displayStatus}
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                            item.status === 'VERIFIED'
+                              ? 'bg-emerald-500'
+                              : item.status === 'REJECTED'
+                              ? 'bg-rose-500'
+                              : 'bg-amber-500'
+                          }`}
+                        />
+                        {item.isPackage && item.status === 'REJECTED' && (item.primaryStatus !== 'REJECTED' || item.secondaryStatus !== 'REJECTED')
+                          ? 'Partial Reject'
+                          : displayStatus}
                       </span>
                     </td>
                   </tr>

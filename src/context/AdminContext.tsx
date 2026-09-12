@@ -50,6 +50,12 @@ interface AdminContextType {
   approveVerification: (id: string) => Promise<void>;
   rejectVerification: (id: string, reason?: string) => Promise<void>;
   resetVerification: (id: string) => Promise<void>;
+
+  // Comparison Modal Controls
+  isComparisonModalOpen: boolean;
+  setIsComparisonModalOpen: (open: boolean) => void;
+  openComparisonModal: (id?: string) => void;
+  closeComparisonModal: () => void;
 }
 
 export const AUTHORIZED_ADMINS = [
@@ -156,6 +162,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const [verifications, setVerifications] = useState<VerificationRequest[]>([]);
   const [selectedVerificationId, setSelectedVerificationId] = useState<string>('');
+  const [isComparisonModalOpen, setIsComparisonModalOpen] = useState<boolean>(false);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [bookings] = useState<BookingCompliance[]>(MOCK_BOOKINGS_LOGISTICS);
 
@@ -345,11 +352,17 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const rejectVerification = async (id: string, reason?: string) => {
-    // Optimistic UI update
+    // Optimistic UI update supporting targeted primary or secondary document rejection
     setVerifications((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, status: 'REJECTED', notes: reason } : item
-      )
+      prev.map((item) => {
+        if (item.id === id) {
+          return { ...item, status: 'REJECTED', primaryStatus: 'REJECTED', notes: reason };
+        }
+        if (item.secondaryDocumentId === id) {
+          return { ...item, status: 'REJECTED', secondaryStatus: 'REJECTED', secondaryNotes: reason };
+        }
+        return item;
+      })
     );
 
     // Call live backend endpoint
@@ -362,11 +375,19 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const resetVerification = async (id: string) => {
-    // Optimistic UI update
+    // Optimistic UI update supporting targeted primary or secondary document reset
     setVerifications((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, status: 'PENDING / REVIEW', notes: undefined } : item
-      )
+      prev.map((item) => {
+        if (item.id === id) {
+          const overallStatus = item.secondaryStatus === 'REJECTED' ? 'REJECTED' : 'PENDING / REVIEW';
+          return { ...item, status: overallStatus, primaryStatus: 'PENDING / REVIEW', notes: undefined };
+        }
+        if (item.secondaryDocumentId === id) {
+          const overallStatus = item.primaryStatus === 'REJECTED' ? 'REJECTED' : (item.primaryStatus || 'PENDING / REVIEW');
+          return { ...item, status: overallStatus, secondaryStatus: 'PENDING / REVIEW', secondaryNotes: undefined };
+        }
+        return item;
+      })
     );
 
     // Call live backend endpoint
@@ -377,6 +398,17 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       console.warn('[Admin API] Reset sync note:', err);
     }
   };
+
+  const openComparisonModal = useCallback((id?: string) => {
+    if (id) {
+      setSelectedVerificationId(id);
+    }
+    setIsComparisonModalOpen(true);
+  }, []);
+
+  const closeComparisonModal = useCallback(() => {
+    setIsComparisonModalOpen(false);
+  }, []);
 
   return (
     <AdminContext.Provider
@@ -410,6 +442,10 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         approveVerification,
         rejectVerification,
         resetVerification,
+        isComparisonModalOpen,
+        setIsComparisonModalOpen,
+        openComparisonModal,
+        closeComparisonModal,
       }}
     >
       {children}
