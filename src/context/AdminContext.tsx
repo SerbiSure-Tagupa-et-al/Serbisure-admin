@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { AdminRole, BarangayStats, VerificationRequest, UserProfile, BookingCompliance, DashboardMetrics } from '../types/admin';
-import { BARANGAYS_DATA, MOCK_BOOKINGS_LOGISTICS } from '../data/mockData';
-import { fetchVerificationQueue, reviewVerification, fetchRegisteredUsers, fetchDashboardStats } from '../api/adminApi';
+import { BARANGAYS_DATA } from '../data/mockData';
+import { fetchVerificationQueue, reviewVerification, fetchRegisteredUsers, fetchDashboardStats, fetchDashboardActivity, fetchMonthlyTrend, MonthlyTrendPoint } from '../api/adminApi';
 
 export interface AdminUser {
   username: string;
@@ -40,10 +40,15 @@ interface AdminContextType {
   isLoadingVerifications: boolean;
   isLoadingUsers: boolean;
   isLoadingDashboardStats: boolean;
+  isLoadingDashboardActivity: boolean;
   refreshVerifications: () => Promise<void>;
   refreshUsers: () => Promise<void>;
   refreshDashboardStats: () => Promise<void>;
+  refreshDashboardActivity: () => Promise<void>;
   dashboardMetrics: DashboardMetrics | null;
+  monthlyTrend: MonthlyTrendPoint[];
+  isLoadingMonthlyTrend: boolean;
+  refreshMonthlyTrend: () => Promise<void>;
 
   // Actions
   addBarangay: (barangay: BarangayStats) => void;
@@ -164,10 +169,16 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [selectedVerificationId, setSelectedVerificationId] = useState<string>('');
   const [isComparisonModalOpen, setIsComparisonModalOpen] = useState<boolean>(false);
   const [users, setUsers] = useState<UserProfile[]>([]);
-  const [bookings] = useState<BookingCompliance[]>(MOCK_BOOKINGS_LOGISTICS);
+  // Live bookings from backend, fallback to empty while loading
+  const [bookings, setBookings] = useState<BookingCompliance[]>([]);
+  const [isLoadingDashboardActivity, setIsLoadingDashboardActivity] = useState<boolean>(false);
 
   const [isLoadingVerifications, setIsLoadingVerifications] = useState<boolean>(false);
   const [isLoadingUsers, setIsLoadingUsers] = useState<boolean>(false);
+
+  // Monthly trend data for EmploymentTrendChart
+  const [monthlyTrend, setMonthlyTrend] = useState<MonthlyTrendPoint[]>([]);
+  const [isLoadingMonthlyTrend, setIsLoadingMonthlyTrend] = useState<boolean>(false);
 
   // Sync role and barangay when currentUser changes
   useEffect(() => {
@@ -260,11 +271,49 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [currentRole, selectedBarangay]);
 
+  // Load live booking activity for the dashboard activity table
+  const refreshDashboardActivity = useCallback(async () => {
+    setIsLoadingDashboardActivity(true);
+    try {
+      const bgyParam = currentRole === 'SUPERADMIN'
+        ? (selectedBarangay === 'All Barangays' ? undefined : selectedBarangay)
+        : selectedBarangay;
+      const res = await fetchDashboardActivity(bgyParam);
+      if (res && Array.isArray(res.bookings)) {
+        setBookings(res.bookings);
+      }
+    } catch (err) {
+      console.warn('[Admin API] Dashboard activity notice:', err);
+    } finally {
+      setIsLoadingDashboardActivity(false);
+    }
+  }, [currentRole, selectedBarangay]);
+
+  // Load real monthly employment trend from backend
+  const refreshMonthlyTrend = useCallback(async () => {
+    setIsLoadingMonthlyTrend(true);
+    try {
+      const bgyParam = currentRole === 'SUPERADMIN'
+        ? (selectedBarangay === 'All Barangays' ? undefined : selectedBarangay)
+        : selectedBarangay;
+      const res = await fetchMonthlyTrend(bgyParam);
+      if (res && Array.isArray(res.trend) && res.trend.length > 0) {
+        setMonthlyTrend(res.trend);
+      }
+    } catch (err) {
+      console.warn('[Admin API] Monthly trend notice:', err);
+    } finally {
+      setIsLoadingMonthlyTrend(false);
+    }
+  }, [currentRole, selectedBarangay]);
+
   // Fetch live backend data on initial load, role/barangay change, plus real-time polling
   useEffect(() => {
     refreshVerifications();
     refreshUsers();
     refreshDashboardStats();
+    refreshDashboardActivity();
+    refreshMonthlyTrend();
 
     // Auto-sync real-time stats every 4s for instant reflection when mobile workers toggle status
     const interval = setInterval(() => {
@@ -272,7 +321,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }, 4000);
 
     return () => clearInterval(interval);
-  }, [refreshVerifications, refreshUsers, refreshDashboardStats]);
+  }, [refreshVerifications, refreshUsers, refreshDashboardStats, refreshDashboardActivity, refreshMonthlyTrend]);
 
   const login = async (
     username: string,
@@ -434,10 +483,15 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         isLoadingVerifications,
         isLoadingUsers,
         isLoadingDashboardStats,
+        isLoadingDashboardActivity,
         refreshVerifications,
         refreshUsers,
         refreshDashboardStats,
+        refreshDashboardActivity,
         dashboardMetrics,
+        monthlyTrend,
+        isLoadingMonthlyTrend,
+        refreshMonthlyTrend,
         addBarangay,
         approveVerification,
         rejectVerification,

@@ -1,5 +1,5 @@
 import { fetchApi } from './apiClient';
-import { VerificationRequest, UserProfile, DashboardStatsResponse } from '../types/admin';
+import { VerificationRequest, UserProfile, DashboardStatsResponse, BookingCompliance } from '../types/admin';
 
 export async function fetchVerificationQueue(
   role?: string, 
@@ -47,4 +47,28 @@ export async function fetchDashboardStats(barangay?: string): Promise<DashboardS
 
   const query = params.toString() ? `?${params.toString()}` : '';
   return fetchApi<DashboardStatsResponse>(`/api/v1/accounts/admin/dashboard-stats/${query}`);
+}
+
+export async function fetchDashboardActivity(barangay?: string): Promise<{ bookings: BookingCompliance[]; count: number }> {
+  const params = new URLSearchParams();
+  if (barangay && barangay !== 'All Barangays') params.append('barangay', barangay);
+
+  const query = params.toString() ? `?${params.toString()}` : '';
+  return fetchApi<{ bookings: BookingCompliance[]; count: number }>(`/api/v1/accounts/admin/dashboard-activity/${query}`);
+}
+
+export interface MonthlyTrendPoint {
+  month: string;
+  year: number;
+  employed: number;
+  available: number;
+  total: number;
+}
+
+export async function fetchMonthlyTrend(barangay?: string): Promise<{ trend: MonthlyTrendPoint[] }> {
+  const params = new URLSearchParams();
+  if (barangay && barangay !== 'All Barangays') params.append('barangay', barangay);
+
+  const query = params.toString() ? `?${params.toString()}` : '';
+  return fetchApi<{ trend: MonthlyTrendPoint[] }>(`/api/v1/accounts/admin/monthly-trend/${query}`);
 }
