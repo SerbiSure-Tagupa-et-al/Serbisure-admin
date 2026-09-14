@@ -292,10 +292,18 @@ export const DocumentPreview: React.FC = () => {
   );
 }
 
-  const handleApprove = async () => {
-    await approveVerification(selectedItem.id);
-    setFeedbackMessage(`Approved ${selectedItem.name}'s ${selectedItem.documentType}`);
+  const handleApproveById = async (targetId: string, docLabel?: string) => {
+    await approveVerification(targetId);
+    setFeedbackMessage(`Approved ${selectedItem.name}'s ${docLabel || selectedItem.documentType}`);
     setTimeout(() => setFeedbackMessage(null), 3000);
+  };
+
+  const handleApprove = async () => {
+    const targetDocId = (idSide === 'back' && selectedItem.secondaryDocumentId)
+      ? selectedItem.secondaryDocumentId
+      : selectedItem.id;
+    const targetLabel = (idSide === 'back' && hasSecondary) ? secondaryDocLabel : primaryDocLabel;
+    await handleApproveById(targetDocId, targetLabel);
   };
 
   const handleRejectById = async (targetId: string, reason?: string, docLabel?: string) => {
@@ -924,6 +932,8 @@ export const DocumentPreview: React.FC = () => {
           idName: idName,
         }}
         document={{
+          id: selectedItem.id,
+          primaryDocumentId: selectedItem.id,
           documentType: selectedItem.documentType,
           documentNumber: docNumber,
           documentImage: selectedItem.documentImage,
@@ -946,15 +956,19 @@ export const DocumentPreview: React.FC = () => {
           validityDate: selectedItem.validityDate,
           ocrExtractedData: selectedItem.ocrExtractedData,
         }}
-        onApprove={selectedItem.status !== 'VERIFIED' ? handleApprove : undefined}
+        onApprove={selectedItem.status !== 'VERIFIED' ? (targetDocId) => {
+          const targetId = targetDocId || (idSide === 'back' && selectedItem.secondaryDocumentId ? selectedItem.secondaryDocumentId : selectedItem.id);
+          const targetLabel = targetId === selectedItem.secondaryDocumentId ? secondaryDocLabel : primaryDocLabel;
+          handleApproveById(targetId, targetLabel);
+        } : undefined}
         onReject={(reason, documentId) => {
           const targetId = documentId || (idSide === 'back' && selectedItem.secondaryDocumentId ? selectedItem.secondaryDocumentId : selectedItem.id);
-          const targetLabel = documentId && documentId === selectedItem.secondaryDocumentId ? secondaryDocLabel : primaryDocLabel;
+          const targetLabel = targetId === selectedItem.secondaryDocumentId ? secondaryDocLabel : primaryDocLabel;
           handleRejectById(targetId, reason, targetLabel);
         }}
         onReset={(documentId) => {
           const targetId = documentId || (idSide === 'back' && selectedItem.secondaryDocumentId ? selectedItem.secondaryDocumentId : selectedItem.id);
-          const targetLabel = documentId && documentId === selectedItem.secondaryDocumentId ? secondaryDocLabel : primaryDocLabel;
+          const targetLabel = targetId === selectedItem.secondaryDocumentId ? secondaryDocLabel : primaryDocLabel;
           handleResetById(targetId, targetLabel);
         }}
       />

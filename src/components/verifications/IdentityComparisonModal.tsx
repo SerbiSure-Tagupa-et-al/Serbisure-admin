@@ -28,6 +28,8 @@ export interface IdentityComparisonModalProps {
     idName?: string;
   };
   document: {
+    id?: string;
+    primaryDocumentId?: string;
     documentType: string;
     documentNumber: string;
     documentImage: string;
@@ -52,7 +54,7 @@ export interface IdentityComparisonModalProps {
     hasDocuments?: boolean;
   };
   hasDocuments?: boolean;
-  onApprove?: () => void;
+  onApprove?: (documentId?: string) => void;
   onReject?: (reason?: string, documentId?: string) => void;
   onReset?: (documentId?: string) => void;
 }
@@ -321,21 +323,22 @@ export const IdentityComparisonModal: React.FC<IdentityComparisonModalProps> = (
     setDocPan({ x: 0, y: 0 });
   };
 
+  const currentTargetDocId = (docSide === 'back' && document.secondaryDocumentId)
+    ? document.secondaryDocumentId
+    : (document.primaryDocumentId || document.id);
+
   const handleApproveClick = () => {
     if (onApprove) {
-      onApprove();
+      onApprove(currentTargetDocId);
       onClose();
     }
   };
 
   const handleRejectClick = () => {
     if (onReject) {
-      const targetDocId = (docSide === 'back' && document.secondaryDocumentId)
-        ? document.secondaryDocumentId
-        : undefined;
       onReject(
         rejectionReason || `${activeDocLabel} does not meet verification criteria or details do not match`,
-        targetDocId
+        currentTargetDocId
       );
       onClose();
     }
@@ -698,10 +701,7 @@ export const IdentityComparisonModal: React.FC<IdentityComparisonModalProps> = (
                         <button
                           type="button"
                           onClick={() => {
-                            const targetDocId = (docSide === 'back' && document.secondaryDocumentId)
-                              ? document.secondaryDocumentId
-                              : undefined;
-                            onReset(targetDocId);
+                            onReset(currentTargetDocId);
                             onClose();
                           }}
                           className="text-[11px] font-bold text-zinc-400 hover:text-white cursor-pointer hover:underline shrink-0 border-0 bg-transparent"
@@ -817,10 +817,7 @@ export const IdentityComparisonModal: React.FC<IdentityComparisonModalProps> = (
                   <button
                     type="button"
                     onClick={() => {
-                      const targetDocId = (docSide === 'back' && document.secondaryDocumentId)
-                        ? document.secondaryDocumentId
-                        : undefined;
-                      onReset(targetDocId);
+                      onReset(currentTargetDocId);
                       onClose();
                     }}
                     className="px-4 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-700 text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5"
