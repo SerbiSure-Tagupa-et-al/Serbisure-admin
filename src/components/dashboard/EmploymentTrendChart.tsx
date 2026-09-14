@@ -1,181 +1,295 @@
-import React, { useState } from 'react';
-import { ChevronDown, TrendingUp } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { ChevronDown, TrendingUp, BarChart3, Briefcase, UserCheck, Users } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
-
-interface MonthlyPoint {
-  month: string;
-  employed: number;
-  available: number;
-  total: number;
-}
+import { fetchMonthlyTrend, MonthlyTrendPoint } from '../../api/adminApi';
 
 export const EmploymentTrendChart: React.FC = () => {
-  const { monthlyTrend, isLoadingMonthlyTrend } = useAdmin();
-  const [hoveredIdx, setHoveredIdx] = useState<number>(7); // Default to Aug position
-  const [timeframe, setTimeframe] = useState<'Monthly' | 'Quarterly'>('Monthly');
+  const { 
+    monthlyTrend, 
+    isLoadingMonthlyTrend, 
+    selectedBarangay, 
+    barangays 
+  } = useAdmin();
 
-  // Use live backend data; show zeros as a skeleton when loading or empty
-  const CHART_DATA: MonthlyPoint[] = monthlyTrend.length > 0
-    ? monthlyTrend
-    : Array.from({ length: 12 }, (_, i) => ({
-        month: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][i],
-        employed: 0,
-        available: 0,
-        total: 0,
-      }));
+  // Selected barangay for the chart; defaults to Pagatpat as requested
+  const [activeBarangay, setActiveBarangay] = useState<string>(() => {
+    if (selectedBarangay && selectedBarangay !== 'All Barangays') {
+      return selectedBarangay;
+    }
+    return 'Pagatpat';
+  });
 
-  // Calculate YoY or MTD delta for header badge
-  const lastMonth = monthlyTrend.length > 0 ? monthlyTrend[monthlyTrend.length - 1] : null;
-  const prevMonth = monthlyTrend.length > 1 ? monthlyTrend[monthlyTrend.length - 2] : null;
+  const [chartData, setChartData] = useState<MonthlyTrendPoint[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [metaStats, setMetaStats] = useState<{ total: number; onJob: number; available: number } | null>(null);
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+
+  // Synchronize when parent selectedBarangay changes (e.g. from navbar selector)
+  useEffect(() => {
+    if (selectedBarangay && selectedBarangay !== 'All Barangays') {
+      setActiveBarangay(selectedBarangay);
+    }
+  }, [selectedBarangay]);
+
+  // Fetch trend data whenever activeBarangay changes
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+
+    const bgyToFetch = activeBarangay === 'All Barangays' ? undefined : activeBarangay;
+    fetchMonthlyTrend(bgyToFetch)
+      .then((res) => {
+        if (!isMounted) return;
+        if (res && Array.isArray(res.trend) && res.trend.length > 0) {
+          setChartData(res.trend);
+          setHoveredIdx(res.trend.length - 1); // Default to current month
+          setMetaStats({
+            total: res.total_workers ?? (res.trend[res.trend.length - 1]?.total || 0),
+            onJob: res.current_on_the_job ?? (res.trend[res.trend.length - 1]?.employed || 0),
+            available: res.current_available ?? (res.trend[res.trend.length - 1]?.available || 0),
+          });
+        }
+      })
+      .catch((err) => {
+        console.warn('[EmploymentTrendChart] Error fetching trend for', activeBarangay, err);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeBarangay, monthlyTrend]);
+
+  // Fallback data if still empty
+  const DISPLAY_DATA: MonthlyTrendPoint[] = useMemo(() => {
+    if (chartData.length > 0) return chartData;
+    const months = ['Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'];
+    return months.map((m) => ({
+      month: m,
+      year: 2026,
+      employed: 0,
+      on_the_job: 0,
+      available: 0,
+      total: 0,
+    }));
+  }, [chartData]);
+
+  // Current latest data point
+  const currentMonthPoint = DISPLAY_DATA[DISPLAY_DATA.length - 1] || {
+    employed: 0,
+    available: 0,
+    total: 0,
+  };
+
+  // Trend Delta calculation
+  const lastMonth = DISPLAY_DATA.length > 0 ? DISPLAY_DATA[DISPLAY_DATA.length - 1] : null;
+  const prevMonth = DISPLAY_DATA.length > 1 ? DISPLAY_DATA[DISPLAY_DATA.length - 2] : null;
   const trendDelta = (lastMonth && prevMonth && prevMonth.employed > 0)
     ? (((lastMonth.employed - prevMonth.employed) / prevMonth.employed) * 100).toFixed(1)
     : null;
 
   // Chart dimensions
-  const width = 640;
-  const height = 240;
-  const paddingX = 40;
-  const paddingY = 30;
+  const width = 660;
+  const height = 230;
+  const paddingLeft = 42;
+  const paddingRight = 20;
+  const paddingTop = 32;
+  const paddingBottom = 34;
 
-  const maxVal = Math.max(600, ...CHART_DATA.map(d => d.employed), ...CHART_DATA.map(d => d.available));
-  const minVal = 0;
+  const chartAreaWidth = width - paddingLeft - paddingRight;
+  const chartAreaHeight = height - paddingTop - paddingBottom;
 
-  // Calculate coordinates
-  const points1 = CHART_DATA.map((d, i) => {
-    const x = paddingX + (i / (CHART_DATA.length - 1)) * (width - 2 * paddingX);
-    const y = height - paddingY - ((d.employed - minVal) / Math.max(1, maxVal - minVal)) * (height - 2 * paddingY);
-    return { x, y, data: d };
-  });
+  // Dynamic maximum calculation
+  const rawMax = Math.max(
+    1,
+    ...DISPLAY_DATA.map((d) => d.employed || 0),
+    ...DISPLAY_DATA.map((d) => d.available || 0)
+  );
 
-  const points2 = CHART_DATA.map((d, i) => {
-    const x = paddingX + (i / (CHART_DATA.length - 1)) * (width - 2 * paddingX);
-    const y = height - paddingY - ((d.available - minVal) / Math.max(1, maxVal - minVal)) * (height - 2 * paddingY);
-    return { x, y, data: d };
-  });
+  // Clean discrete integer grid scaling for realistic workforce numbers
+  const maxVal = rawMax <= 5 ? 6 : rawMax <= 10 ? 12 : Math.ceil(rawMax * 1.25);
 
-  // Generate smooth SVG Catmull-Rom or Bezier curve path
-  const createSmoothPath = (pts: { x: number; y: number }[]) => {
-    if (pts.length === 0) return '';
-    let d = `M ${pts[0].x} ${pts[0].y}`;
-    for (let i = 0; i < pts.length - 1; i++) {
-      const p0 = pts[i === 0 ? 0 : i - 1];
-      const p1 = pts[i];
-      const p2 = pts[i + 1];
-      const p3 = pts[i + 2 < pts.length ? i + 2 : i + 1];
+  const gridTicks = [
+    Math.round(maxVal * 0.25),
+    Math.round(maxVal * 0.5),
+    Math.round(maxVal * 0.75),
+    maxVal,
+  ];
 
-      const cp1x = p1.x + (p2.x - p0.x) / 6;
-      const cp1y = p1.y + (p2.y - p0.y) / 6;
-      const cp2x = p2.x - (p3.x - p1.x) / 6;
-      const cp2y = p2.y - (p3.y - p1.y) / 6;
+  // Bar slot measurements
+  const slotWidth = chartAreaWidth / DISPLAY_DATA.length;
+  const barWidth = 11;
+  const barSpacing = 3;
 
-      d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+  const activeHoverIdx = hoveredIdx ?? DISPLAY_DATA.length - 1;
+  const activeHoverPoint = DISPLAY_DATA[activeHoverIdx] || currentMonthPoint;
+
+  // Unique list of barangays for selector
+  const barangayOptions = useMemo(() => {
+    const list = new Set<string>();
+    list.add('Pagatpat'); // Priority focus
+    list.add('Canitoan');
+    if (barangays && Array.isArray(barangays)) {
+      barangays.forEach((b) => {
+        if (b.name && b.name !== 'All Barangays') list.add(b.name);
+      });
     }
-    return d;
-  };
-
-  const linePath1 = createSmoothPath(points1);
-  const linePath2 = createSmoothPath(points2);
-
-  const areaPath1 = `${linePath1} L ${points1[points1.length - 1].x} ${height - paddingY} L ${points1[0].x} ${height - paddingY} Z`;
-  const areaPath2 = `${linePath2} L ${points2[points2.length - 1].x} ${height - paddingY} L ${points2[0].x} ${height - paddingY} Z`;
-
-  const hoveredPoint = points1[hoveredIdx];
+    return ['Pagatpat', ...Array.from(list).filter(b => b !== 'Pagatpat'), 'All Barangays'];
+  }, [barangays]);
 
   return (
-    <div className="bg-white rounded-3xl p-6 sm:p-7 flex flex-col justify-between h-full relative">
+    <div className="bg-white rounded-3xl p-6 sm:p-7 flex flex-col justify-between h-full relative shadow-sm border border-zinc-100">
       {/* Header & Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-3">
         <div>
           <div className="flex items-center gap-2">
-            <h3 className="text-lg font-black font-display text-[#0D0D11] tracking-tight">
-              Employment Trends
-            </h3>
-            {isLoadingMonthlyTrend ? (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-zinc-100 text-zinc-400 text-[11px] font-extrabold animate-pulse">
-                Loading...
-              </span>
-            ) : trendDelta !== null ? (
-              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold ${
-                Number(trendDelta) >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
-              }`}>
-                <TrendingUp className="w-3 h-3" />
-                {Number(trendDelta) >= 0 ? '+' : ''}{trendDelta}% MoM
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-zinc-100 text-zinc-400 text-[11px] font-extrabold">
-                No data yet
-              </span>
-            )}
+            <div className="w-8 h-8 rounded-xl bg-orange-50 border border-orange-200/60 flex items-center justify-center text-orange-600">
+              <BarChart3 className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-black font-display text-[#0D0D11] tracking-tight">
+                  Employment Trends
+                </h3>
+                {isLoading || isLoadingMonthlyTrend ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-400 text-[10px] font-extrabold animate-pulse">
+                    Updating...
+                  </span>
+                ) : trendDelta !== null ? (
+                  <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold border ${
+                    Number(trendDelta) >= 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-200/50' : 'bg-rose-50 text-rose-700 border-rose-200/50'
+                  }`}>
+                    <TrendingUp className="w-3 h-3" />
+                    {Number(trendDelta) >= 0 ? '+' : ''}{trendDelta}% MoM
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-extrabold border border-emerald-200/50">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    Live • Brgy. {activeBarangay}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-zinc-400 mt-0.5 font-medium">
+                Kasambahay workforce: <span className="font-semibold text-orange-600">On the Job</span> vs <span className="font-semibold text-zinc-700">Available</span>
+              </p>
+            </div>
           </div>
-          <p className="text-xs text-zinc-400 mt-0.5 font-medium">
-            Active verified placements vs available workforce
-            {monthlyTrend.length > 0 && (
-              <span className="ml-1 text-emerald-600 font-bold">• Live</span>
-            )}
-          </p>
         </div>
 
-        {/* Legend & Filter */}
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-3 text-xs font-bold text-zinc-600">
-            <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#FFB380]" />
-              <span>Employed</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#0D0D11]" />
-              <span>Available</span>
-            </div>
+        {/* Legend & Barangay Filter */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Barangay Selector */}
+          <div className="relative">
+            <select
+              value={activeBarangay}
+              onChange={(e) => setActiveBarangay(e.target.value)}
+              className="appearance-none bg-[#F4F4F0] hover:bg-[#EAEAE5] text-zinc-800 text-xs font-black font-display py-1.5 pl-3 pr-7 rounded-full border border-zinc-200/60 cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-colors"
+            >
+              {barangayOptions.map((bgy) => (
+                <option key={bgy} value={bgy}>
+                  {bgy === 'All Barangays' ? 'All CDO Barangays' : `Brgy. ${bgy}`}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 text-zinc-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
 
-          <div className="relative">
-            <button
-              onClick={() => setTimeframe(timeframe === 'Monthly' ? 'Quarterly' : 'Monthly')}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#F0F0EC] hover:bg-[#EAEAE5] rounded-full text-xs font-extrabold font-display text-zinc-800 transition-colors cursor-pointer"
-            >
-              <span>{timeframe}</span>
-              <ChevronDown className="w-3 h-3 text-zinc-400" />
-            </button>
+          {/* Interactive Legend Pills */}
+          <div className="flex items-center gap-3 text-xs font-bold text-zinc-600 bg-zinc-50 px-3 py-1.5 rounded-full border border-zinc-200/60">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-sm bg-[#F97316]" />
+              <span>On the Job</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-sm bg-[#0D0D11]" />
+              <span>Available</span>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* SVG Chart Graphic */}
-      <div className="relative w-full overflow-hidden mt-2">
-        <svg 
-          viewBox={`0 0 ${width} ${height}`} 
+      {/* Live KPI Quick Glance in the Barangay */}
+      <div className="grid grid-cols-3 gap-2.5 my-2">
+        <div className="bg-[#FFF8F3] border border-orange-100/90 rounded-2xl px-3.5 py-2 flex items-center justify-between">
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-wider text-orange-700">On the Job</div>
+            <div className="text-lg font-black text-orange-600 font-display leading-tight">
+              {metaStats?.onJob ?? currentMonthPoint.employed}
+            </div>
+          </div>
+          <div className="w-6 h-6 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center">
+            <Briefcase className="w-3.5 h-3.5" />
+          </div>
+        </div>
+
+        <div className="bg-[#F8F9FA] border border-zinc-200/70 rounded-2xl px-3.5 py-2 flex items-center justify-between">
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-wider text-zinc-600">Available</div>
+            <div className="text-lg font-black text-[#0D0D11] font-display leading-tight">
+              {metaStats?.available ?? currentMonthPoint.available}
+            </div>
+          </div>
+          <div className="w-6 h-6 rounded-lg bg-zinc-200/80 text-zinc-800 flex items-center justify-center">
+            <UserCheck className="w-3.5 h-3.5" />
+          </div>
+        </div>
+
+        <div className="bg-[#FAFAF7] border border-amber-200/60 rounded-2xl px-3.5 py-2 flex items-center justify-between">
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Total Kasambahay</div>
+            <div className="text-lg font-black text-zinc-900 font-display leading-tight">
+              {metaStats?.total ?? currentMonthPoint.total}
+            </div>
+          </div>
+          <div className="w-6 h-6 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center">
+            <Users className="w-3.5 h-3.5" />
+          </div>
+        </div>
+      </div>
+
+      {/* SVG Bar Graph */}
+      <div className="relative w-full overflow-hidden mt-1">
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
           className="w-full h-auto overflow-visible select-none"
         >
           <defs>
-            {/* Gradient for Employed Area (Apricot Peach) */}
-            <linearGradient id="employedGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#FFB380" stopOpacity="0.28" />
-              <stop offset="100%" stopColor="#FFB380" stopOpacity="0.0" />
+            {/* Orange Gradient for On the Job bars */}
+            <linearGradient id="onJobBarGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#FB923C" />
+              <stop offset="100%" stopColor="#EA580C" />
             </linearGradient>
 
-            {/* Gradient for Available Area (Ink Black) */}
-            <linearGradient id="availableGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#0D0D11" stopOpacity="0.08" />
-              <stop offset="100%" stopColor="#0D0D11" stopOpacity="0.0" />
+            {/* Dark Gradient for Available bars */}
+            <linearGradient id="availableBarGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#27272A" />
+              <stop offset="100%" stopColor="#09090B" />
             </linearGradient>
+
+            {/* Subtle glow filter on hover */}
+            <filter id="barGlow" x="-20%" y="-20%" width="140%" height="140%">
+              <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#F97316" floodOpacity="0.25" />
+            </filter>
           </defs>
 
           {/* Horizontal Grid lines */}
-          {[Math.round(maxVal * 0.2), Math.round(maxVal * 0.4), Math.round(maxVal * 0.6), Math.round(maxVal * 0.8)].map((val) => {
-            const y = height - paddingY - ((val - minVal) / Math.max(1, maxVal - minVal)) * (height - 2 * paddingY);
+          {gridTicks.map((val) => {
+            const y = paddingTop + chartAreaHeight - (val / maxVal) * chartAreaHeight;
             return (
               <g key={val}>
                 <line
-                  x1={paddingX}
+                  x1={paddingLeft}
                   y1={y}
-                  x2={width - paddingX}
+                  x2={width - paddingRight}
                   y2={y}
                   stroke="#F0F0EC"
                   strokeDasharray="4 4"
                   strokeWidth="1"
                 />
                 <text
-                  x={paddingX - 10}
+                  x={paddingLeft - 8}
                   y={y + 3}
                   textAnchor="end"
                   className="text-[10px] fill-zinc-400 font-semibold"
@@ -186,128 +300,169 @@ export const EmploymentTrendChart: React.FC = () => {
             );
           })}
 
-          {/* Area Fills */}
-          <path d={areaPath2} fill="url(#availableGradient)" />
-          <path d={areaPath1} fill="url(#employedGradient)" />
-
-          {/* Stroke Lines */}
-          <path
-            d={linePath2}
-            fill="none"
-            stroke="#0D0D11"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            className="transition-all duration-300"
-          />
-          <path
-            d={linePath1}
-            fill="none"
-            stroke="#FFB380"
-            strokeWidth="3.5"
-            strokeLinecap="round"
-            className="transition-all duration-300"
+          {/* Bottom baseline */}
+          <line
+            x1={paddingLeft}
+            y1={paddingTop + chartAreaHeight}
+            x2={width - paddingRight}
+            y2={paddingTop + chartAreaHeight}
+            stroke="#E4E4E0"
+            strokeWidth="1.5"
           />
 
-          {/* Vertical Guide line at hovered point */}
-          {hoveredPoint && (
-            <line
-              x1={hoveredPoint.x}
-              y1={paddingY}
-              x2={hoveredPoint.x}
-              y2={height - paddingY}
-              stroke="#FFB380"
-              strokeWidth="1.5"
-              strokeDasharray="3 3"
-              opacity="0.6"
-            />
-          )}
+          {/* Render Bars per Month */}
+          {DISPLAY_DATA.map((d, idx) => {
+            const xCenter = paddingLeft + (idx + 0.5) * slotWidth;
+            const isHovered = idx === activeHoverIdx;
+            const isCurrentMonth = idx === DISPLAY_DATA.length - 1;
 
-          {/* Data Points Interactive Circles */}
-          {points1.map((p, idx) => {
-            const isHovered = idx === hoveredIdx;
+            // Bar heights
+            const onJobHeight = Math.max(0, (d.employed / maxVal) * chartAreaHeight);
+            const availableHeight = Math.max(0, (d.available / maxVal) * chartAreaHeight);
+
+            const onJobY = paddingTop + chartAreaHeight - onJobHeight;
+            const availableY = paddingTop + chartAreaHeight - availableHeight;
+
+            const onJobX = xCenter - barWidth - barSpacing / 2;
+            const availableX = xCenter + barSpacing / 2;
+
             return (
-              <g 
-                key={p.data.month} 
-                className="cursor-pointer"
+              <g
+                key={`${d.month}-${d.year}`}
+                className="cursor-pointer transition-all"
                 onMouseEnter={() => setHoveredIdx(idx)}
               >
-                {/* Invisible larger target for easy hovering */}
+                {/* Hover Backdrop Column */}
                 <rect
-                  x={p.x - 18}
-                  y={paddingY}
-                  width="36"
-                  height={height - 2 * paddingY}
-                  fill="transparent"
+                  x={xCenter - slotWidth / 2 + 2}
+                  y={paddingTop - 6}
+                  width={slotWidth - 4}
+                  height={chartAreaHeight + 8}
+                  fill={isHovered ? '#F8F8F5' : 'transparent'}
+                  rx="8"
+                  className="transition-colors duration-150"
                 />
 
-                {/* Point for Available */}
-                <circle
-                  cx={points2[idx].x}
-                  cy={points2[idx].y}
-                  r={isHovered ? 5 : 3}
-                  fill="#FFFFFF"
-                  stroke="#0D0D11"
-                  strokeWidth="2"
-                  className="transition-all duration-150"
+                {/* On the Job Bar (Orange) */}
+                <rect
+                  x={onJobX}
+                  y={onJobHeight > 0 ? onJobY : paddingTop + chartAreaHeight - 2}
+                  width={barWidth}
+                  height={Math.max(3, onJobHeight)}
+                  fill="url(#onJobBarGradient)"
+                  rx="3"
+                  className={`transition-all duration-300 ${isHovered ? 'filter drop-shadow(0 2px 4px rgba(249,115,22,0.35))' : ''}`}
                 />
 
-                {/* Point for Employed */}
-                <circle
-                  cx={p.x}
-                  cy={p.y}
-                  r={isHovered ? 6 : 4}
-                  fill={isHovered ? "#FFB380" : "#FFFFFF"}
-                  stroke="#FFB380"
-                  strokeWidth={isHovered ? 3 : 2}
-                  className="transition-all duration-150"
+                {/* Available Bar (Dark Zinc) */}
+                <rect
+                  x={availableX}
+                  y={availableHeight > 0 ? availableY : paddingTop + chartAreaHeight - 2}
+                  width={barWidth}
+                  height={Math.max(3, availableHeight)}
+                  fill="url(#availableBarGradient)"
+                  rx="3"
+                  className={`transition-all duration-300 ${isHovered ? 'filter drop-shadow(0 2px 4px rgba(0,0,0,0.25))' : ''}`}
                 />
 
-                {/* X Axis Month Label */}
+                {/* Numeric label above bars when hovered or active */}
+                {isHovered && (
+                  <>
+                    {d.employed > 0 && (
+                      <text
+                        x={onJobX + barWidth / 2}
+                        y={Math.max(paddingTop + 8, onJobY - 4)}
+                        textAnchor="middle"
+                        className="text-[9px] fill-orange-600 font-black"
+                      >
+                        {d.employed}
+                      </text>
+                    )}
+                    {d.available > 0 && (
+                      <text
+                        x={availableX + barWidth / 2}
+                        y={Math.max(paddingTop + 8, availableY - 4)}
+                        textAnchor="middle"
+                        className="text-[9px] fill-zinc-800 font-black"
+                      >
+                        {d.available}
+                      </text>
+                    )}
+                  </>
+                )}
+
+                {/* Month Label */}
                 <text
-                  x={p.x}
-                  y={height - 8}
+                  x={xCenter}
+                  y={height - 10}
                   textAnchor="middle"
-                  className={`text-[11px] font-extrabold font-display transition-all ${
-                    isHovered 
-                      ? 'fill-[#0D0D11] font-black scale-110' 
-                      : 'fill-zinc-400'
+                  className={`text-[10px] font-display transition-all ${
+                    isHovered
+                      ? 'fill-[#0D0D11] font-black text-[11px]'
+                      : isCurrentMonth
+                      ? 'fill-orange-600 font-extrabold'
+                      : 'fill-zinc-400 font-semibold'
                   }`}
                 >
-                  {p.data.month}
+                  {d.month}
                 </text>
+
+                {/* Small indicator dot for Current Month */}
+                {isCurrentMonth && (
+                  <circle
+                    cx={xCenter}
+                    cy={height - 2}
+                    r="2"
+                    fill="#F97316"
+                  />
+                )}
               </g>
             );
           })}
         </svg>
 
-        {/* Floating Tooltip */}
-        {hoveredPoint && (
+        {/* Floating Tooltip displaying On the Job & Available breakdown */}
+        {activeHoverIdx !== null && activeHoverPoint && (
           <div
-            className="absolute z-20 pointer-events-none transition-all duration-150 bg-[#0D0D11] text-white p-3.5 rounded-3xl text-xs w-40 ring-1 ring-white/10"
+            className="absolute z-20 pointer-events-none transition-all duration-150 bg-[#0D0D11] text-white p-3 rounded-2xl text-xs w-44 ring-1 ring-white/10 shadow-xl"
             style={{
-              left: `calc(${(hoveredPoint.x / width) * 100}% - 80px)`,
-              top: `${Math.max(10, (hoveredPoint.y / height) * 100 - 45)}%`,
+              left: `${Math.min(
+                72,
+                Math.max(
+                  8,
+                  ((paddingLeft + (activeHoverIdx + 0.5) * slotWidth) / width) * 100 - 18
+                )
+              )}%`,
+              top: '12%',
             }}
           >
             <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-zinc-800">
               <span className="font-black font-display text-[#FFB380] uppercase tracking-wider text-[10px]">
-                {hoveredPoint.data.month} Stats
+                {activeHoverPoint.month} {activeHoverPoint.year || 2026}
               </span>
-              <span className="text-[10px] text-zinc-400 font-bold">2026</span>
+              <span className="text-[9px] text-zinc-400 font-semibold px-1.5 py-0.5 bg-zinc-800 rounded">
+                Brgy. {activeBarangay}
+              </span>
             </div>
 
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="text-zinc-400 text-[11px] flex items-center gap-1.5 font-medium">
-                  <span className="w-2 h-2 rounded-full bg-[#FFB380]" /> Employed
+                  <span className="w-2 h-2 rounded-sm bg-[#F97316]" /> On the Job
                 </span>
-                <span className="font-extrabold text-white">{hoveredPoint.data.employed}</span>
+                <span className="font-black text-orange-400">{activeHoverPoint.employed}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-zinc-400 text-[11px] flex items-center gap-1.5 font-medium">
-                  <span className="w-2 h-2 rounded-full bg-white" /> Available
+                  <span className="w-2 h-2 rounded-sm bg-zinc-300" /> Available
                 </span>
-                <span className="font-extrabold text-white">{hoveredPoint.data.available}</span>
+                <span className="font-black text-white">{activeHoverPoint.available}</span>
+              </div>
+              <div className="flex items-center justify-between pt-1 border-t border-zinc-800/80 text-[10px] text-zinc-400">
+                <span>Total Workforce</span>
+                <span className="font-bold text-zinc-200">
+                  {activeHoverPoint.total || activeHoverPoint.employed + activeHoverPoint.available}
+                </span>
               </div>
             </div>
           </div>

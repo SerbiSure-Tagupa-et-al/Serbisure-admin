@@ -1,12 +1,13 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { AdminRole, BarangayStats, VerificationRequest, UserProfile, BookingCompliance, DashboardMetrics } from '../types/admin';
+import { AdminRole, BarangayStats, VerificationRequest, UserProfile, BookingCompliance, DashboardMetrics, AuditLogEntry } from '../types/admin';
 import { BARANGAYS_DATA } from '../data/mockData';
-import { fetchVerificationQueue, reviewVerification, fetchRegisteredUsers, fetchDashboardStats, fetchDashboardActivity, fetchMonthlyTrend, MonthlyTrendPoint, adminLoginApi, fetchActiveLguBarangays, fetchAllUserBarangays } from '../api/adminApi';
+import { fetchVerificationQueue, reviewVerification, fetchRegisteredUsers, fetchDashboardStats, fetchDashboardActivity, fetchMonthlyTrend, MonthlyTrendPoint, adminLoginApi, fetchActiveLguBarangays, fetchAllUserBarangays, fetchAuditLogs } from '../api/adminApi';
 
 export interface AdminUser {
   username: string;
   name: string;
   role: AdminRole;
+  email?: string;
   barangay?: string;
   avatar: string;
 }
@@ -50,6 +51,9 @@ interface AdminContextType {
   monthlyTrend: MonthlyTrendPoint[];
   isLoadingMonthlyTrend: boolean;
   refreshMonthlyTrend: () => Promise<void>;
+  auditLogs: AuditLogEntry[];
+  isLoadingAuditLogs: boolean;
+  refreshAuditLogs: () => Promise<void>;
 
   // Actions
   addBarangay: (barangay: BarangayStats) => void;
@@ -179,6 +183,25 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Monthly trend data for EmploymentTrendChart
   const [monthlyTrend, setMonthlyTrend] = useState<MonthlyTrendPoint[]>([]);
   const [isLoadingMonthlyTrend, setIsLoadingMonthlyTrend] = useState<boolean>(false);
+
+  // Real-time Audit Logs state
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
+  const [isLoadingAuditLogs, setIsLoadingAuditLogs] = useState<boolean>(false);
+
+  const refreshAuditLogs = useCallback(async () => {
+    setIsLoadingAuditLogs(true);
+    try {
+      const bgyParam = currentRole === 'SUPERADMIN' 
+        ? (selectedBarangay === 'All Barangays' ? undefined : selectedBarangay) 
+        : selectedBarangay;
+      const logs = await fetchAuditLogs(undefined, undefined, bgyParam);
+      setAuditLogs(logs || []);
+    } catch (err) {
+      console.warn('[Admin API] Audit logs fetch notice:', err);
+    } finally {
+      setIsLoadingAuditLogs(false);
+    }
+  }, [currentRole, selectedBarangay]);
 
   // Sync role and barangay when currentUser changes
   useEffect(() => {
@@ -360,6 +383,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     refreshDashboardStats();
     refreshDashboardActivity();
     refreshMonthlyTrend();
+    refreshAuditLogs();
 
     // Auto-sync real-time stats every 4s for instant reflection when mobile workers toggle status
     const interval = setInterval(() => {
@@ -367,7 +391,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }, 4000);
 
     return () => clearInterval(interval);
-  }, [refreshVerifications, refreshUsers, refreshDashboardStats, refreshDashboardActivity, refreshMonthlyTrend]);
+  }, [refreshVerifications, refreshUsers, refreshDashboardStats, refreshDashboardActivity, refreshMonthlyTrend, refreshAuditLogs]);
 
   const login = async (
     username: string,
@@ -466,17 +490,38 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const approveVerification = async (id: string) => {
-    // Optimistic UI update
+    // Optimistic UI update supporting targeted or package approval
     setVerifications((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, status: 'VERIFIED', recordStatus: 'Clear Record' } : item
-      )
+      prev.map((item) => {
+        if (item.id === id) {
+          const newSecondaryStatus = item.secondaryStatus === 'REJECTED' ? 'REJECTED' : 'VERIFIED';
+          const newOverallStatus = newSecondaryStatus === 'REJECTED' ? 'REJECTED' : 'VERIFIED';
+          return {
+            ...item,
+            status: newOverallStatus,
+            primaryStatus: 'VERIFIED',
+            secondaryStatus: newSecondaryStatus,
+            recordStatus: newOverallStatus === 'VERIFIED' ? 'Clear Record' : item.recordStatus,
+          };
+        }
+        if (item.secondaryDocumentId === id) {
+          const newPrimaryStatus = item.primaryStatus || 'VERIFIED';
+          const newOverallStatus = newPrimaryStatus === 'REJECTED' ? 'REJECTED' : 'VERIFIED';
+          return {
+            ...item,
+            status: newOverallStatus,
+            secondaryStatus: 'VERIFIED',
+            recordStatus: newOverallStatus === 'VERIFIED' ? 'Clear Record' : item.recordStatus,
+          };
+        }
+        return item;
+      })
     );
 
-    // Call live backend endpoint
+    // Call live backend endpoint with reviewer identity
     try {
-      await reviewVerification(id, 'approve');
-      await refreshVerifications();
+      await reviewVerification(id, 'approve', undefined, currentUser?.email || currentUser?.username);
+      await Promise.all([refreshVerifications(), refreshAuditLogs()]);
     } catch (err) {
       console.warn('[Admin API] Approve sync note:', err);
     }
@@ -496,10 +541,10 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       })
     );
 
-    // Call live backend endpoint
+    // Call live backend endpoint with reviewer identity
     try {
-      await reviewVerification(id, 'reject', reason);
-      await refreshVerifications();
+      await reviewVerification(id, 'reject', reason, currentUser?.email || currentUser?.username);
+      await Promise.all([refreshVerifications(), refreshAuditLogs()]);
     } catch (err) {
       console.warn('[Admin API] Reject sync note:', err);
     }
@@ -521,10 +566,10 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       })
     );
 
-    // Call live backend endpoint
+    // Call live backend endpoint with reviewer identity
     try {
-      await reviewVerification(id, 'reset');
-      await refreshVerifications();
+      await reviewVerification(id, 'reset', undefined, currentUser?.email || currentUser?.username);
+      await Promise.all([refreshVerifications(), refreshAuditLogs()]);
     } catch (err) {
       console.warn('[Admin API] Reset sync note:', err);
     }
@@ -575,6 +620,9 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         monthlyTrend,
         isLoadingMonthlyTrend,
         refreshMonthlyTrend,
+        auditLogs,
+        isLoadingAuditLogs,
+        refreshAuditLogs,
         addBarangay,
         approveVerification,
         rejectVerification,

@@ -1,5 +1,5 @@
 import { fetchApi } from './apiClient';
-import { VerificationRequest, UserProfile, DashboardStatsResponse, BookingCompliance } from '../types/admin';
+import { VerificationRequest, UserProfile, DashboardStatsResponse, BookingCompliance, AuditLogEntry } from '../types/admin';
 
 export async function fetchVerificationQueue(
   role?: string, 
@@ -18,7 +18,8 @@ export async function fetchVerificationQueue(
 export async function reviewVerification(
   documentId: string,
   action: 'approve' | 'reject' | 'reset',
-  rejectionReason?: string
+  rejectionReason?: string,
+  reviewerEmail?: string
 ): Promise<{ message: string; document: VerificationRequest }> {
   return fetchApi<{ message: string; document: VerificationRequest }>(
     `/api/v1/verifications/admin/review/${documentId}/`,
@@ -27,9 +28,26 @@ export async function reviewVerification(
       body: JSON.stringify({
         action,
         rejection_reason: rejectionReason || '',
+        reviewer_email: reviewerEmail || '',
       }),
     }
   );
+}
+
+export async function fetchAuditLogs(
+  action?: string,
+  role?: string,
+  barangay?: string,
+  search?: string
+): Promise<AuditLogEntry[]> {
+  const params = new URLSearchParams();
+  if (action && action !== 'ALL') params.append('action', action);
+  if (role && role !== 'ALL') params.append('role', role);
+  if (barangay && barangay !== 'All Barangays') params.append('barangay', barangay);
+  if (search) params.append('search', search);
+
+  const query = params.toString() ? `?${params.toString()}` : '';
+  return fetchApi<AuditLogEntry[]>(`/api/v1/verifications/admin/audit-logs/${query}`);
 }
 
 export async function fetchRegisteredUsers(role?: string, barangay?: string): Promise<UserProfile[]> {
@@ -61,16 +79,25 @@ export interface MonthlyTrendPoint {
   month: string;
   year: number;
   employed: number;
+  on_the_job?: number;
   available: number;
   total: number;
 }
 
-export async function fetchMonthlyTrend(barangay?: string): Promise<{ trend: MonthlyTrendPoint[] }> {
+export interface MonthlyTrendResponse {
+  trend: MonthlyTrendPoint[];
+  barangay?: string;
+  total_workers?: number;
+  current_on_the_job?: number;
+  current_available?: number;
+}
+
+export async function fetchMonthlyTrend(barangay?: string): Promise<MonthlyTrendResponse> {
   const params = new URLSearchParams();
   if (barangay && barangay !== 'All Barangays') params.append('barangay', barangay);
 
   const query = params.toString() ? `?${params.toString()}` : '';
-  return fetchApi<{ trend: MonthlyTrendPoint[] }>(`/api/v1/accounts/admin/monthly-trend/${query}`);
+  return fetchApi<MonthlyTrendResponse>(`/api/v1/accounts/admin/monthly-trend/${query}`);
 }
 
 export interface AdminLoginResponse {
