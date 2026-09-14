@@ -263,8 +263,19 @@ export const IdentityComparisonModal: React.FC<IdentityComparisonModalProps> = (
   const hasSecondary = Boolean(document.secondaryDocumentImage || document.documentImageBack);
   const secondaryImageUrl = document.secondaryDocumentImage || document.documentImageBack;
 
-  // Determine dynamic tab labels (Only show NBI/Police if it's an actual package or clearance)
-  const isClearancePackage = Boolean(document.isPackage) || Boolean(document.secondaryDocumentImage) || document.documentType.toLowerCase().includes('clearance');
+  // Determine dynamic tab labels (Clearances for Kasambahay; Front/Back for Homeowner & National ID)
+  const isHomeowner = user.role?.toUpperCase() === 'HOMEOWNER';
+  const docTypeLower = (document.documentType || '').toLowerCase();
+  const packageLabelLower = (document.packageLabel || '').toLowerCase();
+  const isNationalId = isHomeowner || docTypeLower.includes('national id') || packageLabelLower.includes('national id');
+  const isClearancePackage = !isNationalId && (
+    user.role?.toUpperCase() === 'KASAMBAHAY' ||
+    docTypeLower.includes('clearance') ||
+    packageLabelLower.includes('clearance') ||
+    docTypeLower.includes('nbi') ||
+    docTypeLower.includes('police')
+  );
+
   const primaryDocLabel = isClearancePackage ? 'NBI Clearance' : 'Front';
   const secondaryDocLabel = isClearancePackage ? 'Police Clearance' : 'Back';
 
@@ -273,8 +284,8 @@ export const IdentityComparisonModal: React.FC<IdentityComparisonModalProps> = (
     : document.documentImage;
 
   const activeDocLabel = (docSide === 'back' && hasSecondary)
-    ? (document.secondaryDocumentType || secondaryDocLabel)
-    : (document.documentType === 'Clearances (NBI + Police)' ? primaryDocLabel : document.documentType);
+    ? (document.secondaryDocumentType || (isClearancePackage ? 'Police Clearance' : 'National ID (Back)'))
+    : (isClearancePackage ? 'NBI Clearance' : (hasSecondary ? 'National ID (Front)' : document.documentType));
 
   // Status evaluation for tabs and per-document views
   const isPrimaryRejected = document.primaryStatus === 'REJECTED' || (document.status === 'REJECTED' && document.secondaryStatus !== 'REJECTED');

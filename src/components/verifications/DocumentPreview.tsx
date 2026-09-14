@@ -331,17 +331,25 @@ export const DocumentPreview: React.FC = () => {
   const hasSecondary = Boolean(selectedItem.secondaryDocumentImage || selectedItem.documentImageBack);
   const secondaryImageUrl = selectedItem.secondaryDocumentImage || selectedItem.documentImageBack;
 
-  const isKasambahayPackage = selectedItem.role?.toUpperCase() === 'KASAMBAHAY' || Boolean(selectedItem.isPackage);
-  const primaryDocLabel = isKasambahayPackage ? 'NBI Clearance' : 'Front Side';
-  const secondaryDocLabel = isKasambahayPackage ? 'Police Clearance' : 'Back Side';
+  const isHomeowner = selectedItem.role?.toUpperCase() === 'HOMEOWNER';
+  const baseDocTypeLower = (selectedItem.documentType || '').toLowerCase();
+  const packageLabelLower = (selectedItem.packageLabel || '').toLowerCase();
+  const isNationalId = isHomeowner || baseDocTypeLower.includes('national id') || packageLabelLower.includes('national id') || (selectedItem.rawDocumentType || '').toLowerCase().includes('national_id');
+  const isKasambahayPackage = !isNationalId && (
+    selectedItem.role?.toUpperCase() === 'KASAMBAHAY' ||
+    baseDocTypeLower.includes('clearance') ||
+    packageLabelLower.includes('clearance') ||
+    baseDocTypeLower.includes('nbi') ||
+    baseDocTypeLower.includes('police')
+  );
+
+  const primaryDocLabel = isKasambahayPackage ? 'NBI Clearance' : 'Front';
+  const secondaryDocLabel = isKasambahayPackage ? 'Police Clearance' : 'Back';
 
   const activeImageUrl = (idSide === 'back' && hasSecondary)
     ? (secondaryImageUrl || selectedItem.documentImage)
     : selectedItem.documentImage;
 
-  // Dynamic values strictly extracted from OCR or verified record (zero hardcoded values)
-  const isNationalId = selectedItem.documentType?.toLowerCase().includes('national id') || (selectedItem.rawDocumentType || '').toLowerCase().includes('national_id') || (!isKasambahayPackage && hasSecondary);
-  
   // Active OCR Data and active metadata depending on selected tab (front vs back / NBI vs Police)
   const activeOcrData = (idSide === 'back' && hasSecondary && selectedItem.secondaryOcrData)
     ? selectedItem.secondaryOcrData
@@ -373,8 +381,8 @@ export const DocumentPreview: React.FC = () => {
     : (rawValidity && rawValidity !== 'Not Detected' ? rawValidity : 'Not Detected');
 
   const resolvedIdType = (idSide === 'back' && hasSecondary)
-    ? (selectedItem.secondaryDocumentType || secondaryDocLabel)
-    : (isNationalId ? 'National ID' : (selectedItem.documentType === 'Clearances (NBI + Police)' ? primaryDocLabel : selectedItem.documentType || 'Government ID'));
+    ? (selectedItem.secondaryDocumentType || (isKasambahayPackage ? 'Police Clearance' : 'National ID (Back)'))
+    : (isKasambahayPackage ? 'NBI Clearance' : (hasSecondary ? 'National ID (Front)' : (isNationalId ? 'National ID' : selectedItem.documentType || 'Government ID')));
 
   const activeDocLabel = resolvedIdType;
 
