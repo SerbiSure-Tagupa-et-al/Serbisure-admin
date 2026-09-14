@@ -178,5 +178,6 @@ export interface BookingCompliance {
   };
   startDate: string;
   barangay?: string;
+  bookingStatus?: string;
   status: 'ACTIVE' | 'FLAGGED_THROTTLED' | 'COMPLIANT' | 'DISPUTED' | 'BELOW_MINIMUM_WAGE';
 }
