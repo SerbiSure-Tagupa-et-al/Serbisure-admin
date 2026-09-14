@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { AdminRole, BarangayStats, VerificationRequest, UserProfile, BookingCompliance, DashboardMetrics } from '../types/admin';
 import { BARANGAYS_DATA } from '../data/mockData';
-import { fetchVerificationQueue, reviewVerification, fetchRegisteredUsers, fetchDashboardStats, fetchDashboardActivity, fetchMonthlyTrend, MonthlyTrendPoint } from '../api/adminApi';
+import { fetchVerificationQueue, reviewVerification, fetchRegisteredUsers, fetchDashboardStats, fetchDashboardActivity, fetchMonthlyTrend, MonthlyTrendPoint, adminLoginApi, fetchActiveLguBarangays, fetchAllUserBarangays } from '../api/adminApi';
 
 export interface AdminUser {
   username: string;
@@ -30,6 +30,7 @@ interface AdminContextType {
   
   // Data
   barangays: BarangayStats[];
+  userBarangays: string[];
   verifications: VerificationRequest[];
   selectedVerificationId: string;
   setSelectedVerificationId: (id: string) => void;
@@ -124,7 +125,12 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
 
   const [currentRole, setCurrentRole] = useState<AdminRole>(() => currentUser?.role || 'SUPERADMIN');
-  const [selectedBarangay, setSelectedBarangay] = useState<string>(() => currentUser?.barangay && currentUser.barangay !== 'All Barangays' ? currentUser.barangay : 'Pagatpat');
+  const [selectedBarangay, setSelectedBarangay] = useState<string>(() => {
+    if (currentUser?.role === 'ADMIN' && currentUser.barangay && currentUser.barangay !== 'All Barangays') {
+      return currentUser.barangay;
+    }
+    return 'All Barangays';
+  });
   const [activeNav, setActiveNav] = useState<string>('dashboard');
   const [searchQuery, setSearchQuery] = useState<string>('');
   
@@ -134,14 +140,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // Remove legacy mock LGUs (Bugo, Nazareth, Carmen, Lumbia)
-          const sanitized = parsed.filter(
-            (b: BarangayStats) => !['Bugo', 'Nazareth', 'Carmen', 'Lumbia'].includes(b.name)
-          );
-          if (sanitized.length > 0) {
-            localStorage.setItem('serbisure_admin_barangays', JSON.stringify(sanitized));
-            return sanitized;
-          }
+          return parsed;
         }
       }
     } catch {
@@ -165,6 +164,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   };
 
+  const [userBarangays, setUserBarangays] = useState<string[]>([]);
   const [verifications, setVerifications] = useState<VerificationRequest[]>([]);
   const [selectedVerificationId, setSelectedVerificationId] = useState<string>('');
   const [isComparisonModalOpen, setIsComparisonModalOpen] = useState<boolean>(false);
@@ -184,7 +184,9 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     if (currentUser) {
       setCurrentRole(currentUser.role);
-      if (currentUser.barangay && currentUser.barangay !== 'All Barangays') {
+      if (currentUser.role === 'SUPERADMIN' || currentUser.barangay === 'All Barangays') {
+        setSelectedBarangay('All Barangays');
+      } else if (currentUser.barangay) {
         setSelectedBarangay(currentUser.barangay);
       }
     }
@@ -261,15 +263,52 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (res && res.metrics) {
         setDashboardMetrics(res.metrics);
       }
-      if (res && res.barangays && res.barangays.length > 0) {
-        setBarangays(res.barangays);
-      }
+      // NOTE: barangays list is NOT populated from stats response anymore.
+      // It is exclusively managed by refreshLguBarangays() below.
     } catch (err) {
       console.warn('[Admin API] Dashboard stats notice:', err);
     } finally {
       setIsLoadingDashboardStats(false);
     }
   }, [currentRole, selectedBarangay]);
+
+  /**
+   * Fetches the canonical LGU barangay list from the dedicated endpoint.
+   * Only account_type='Barangay' with is_active=True and a non-empty barangay
+   * field contributes to this list. Homeowner/Kasambahay addresses are excluded.
+   * Falls back to localStorage cache, then to BARANGAYS_DATA mock if offline.
+   */
+  const refreshLguBarangays = useCallback(async () => {
+    try {
+      const [names, allUserBgys] = await Promise.all([
+        fetchActiveLguBarangays(),
+        fetchAllUserBarangays()
+      ]);
+      if (names.length > 0) {
+        const asStats: BarangayStats[] = names.map((name) => ({
+          name,
+          totalWorkers: 0,
+          employed: 0,
+          available: 0,
+          employmentRatio: 0,
+          status: 'ACTIVE' as const,
+        }));
+        setBarangays(asStats);
+        try {
+          localStorage.setItem('serbisure_admin_barangays', JSON.stringify(asStats));
+        } catch {
+          // ignore storage errors
+        }
+      }
+      if (allUserBgys.length > 0) {
+        setUserBarangays(allUserBgys);
+      }
+    } catch (err) {
+      console.warn('[Admin API] Active LGU barangays fetch failed, using cache/fallback:', err);
+      // Fallback 1: localStorage cache already seeded in initial useState
+      // Fallback 2: BARANGAYS_DATA (Pagatpat + Canitoan) is the useState default
+    }
+  }, []);
 
   // Load live booking activity for the dashboard activity table
   const refreshDashboardActivity = useCallback(async () => {
@@ -307,6 +346,13 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [currentRole, selectedBarangay]);
 
+  // Fetch LGU barangay list once when authenticated (single source of truth)
+  useEffect(() => {
+    if (isAuthenticated) {
+      refreshLguBarangays();
+    }
+  }, [isAuthenticated, refreshLguBarangays]);
+
   // Fetch live backend data on initial load, role/barangay change, plus real-time polling
   useEffect(() => {
     refreshVerifications();
@@ -329,15 +375,50 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     _role?: AdminRole,
     _barangay?: string
   ): Promise<{ success: boolean; error?: string }> => {
-    await new Promise((resolve) => setTimeout(resolve, 400));
-
-    const cleanInput = username.trim().toLowerCase();
+    const cleanInput = username.trim();
     const cleanPass = password.trim();
 
-    // Authenticate against authorized admin accounts
+    // 1. Authenticate against real backend endpoint
+    try {
+      const res = await adminLoginApi(cleanInput, cleanPass);
+      if (res && res.success && res.user) {
+        const user: AdminUser = {
+          username: res.user.username,
+          name: res.user.name,
+          role: res.user.role as AdminRole,
+          barangay: res.user.barangay,
+          avatar: res.user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(res.user.name)}&background=0D0D11&color=fff`,
+        };
+
+        setIsAuthenticated(true);
+        setCurrentUser(user);
+        setCurrentRole(user.role);
+        setSelectedBarangay(user.role === 'SUPERADMIN' ? 'All Barangays' : (user.barangay || 'All Barangays'));
+        setActiveNav('dashboard');
+
+        try {
+          localStorage.setItem('serbisure_admin_auth', 'true');
+          localStorage.setItem('serbisure_admin_user', JSON.stringify(user));
+          if (res.token) {
+            localStorage.setItem('serbisure_admin_token', res.token);
+          }
+        } catch (e) {
+          console.error('Failed to save to localStorage:', e);
+        }
+
+        return { success: true };
+      }
+    } catch (apiErr: any) {
+      console.warn('[Admin API] Backend login failed, checking offline fallback...', apiErr?.message);
+      if (apiErr?.message?.includes('deactivated') || apiErr?.message?.includes('Access denied')) {
+        return { success: false, error: apiErr.message };
+      }
+    }
+
+    // 2. Offline fallback to AUTHORIZED_ADMINS (for offline / dev mode)
     const match = AUTHORIZED_ADMINS.find(
       (a) =>
-        (a.email.toLowerCase() === cleanInput || a.username.toLowerCase() === cleanInput) &&
+        (a.email.toLowerCase() === cleanInput.toLowerCase() || a.username.toLowerCase() === cleanInput.toLowerCase()) &&
         a.password === cleanPass
     );
 
@@ -353,7 +434,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setIsAuthenticated(true);
       setCurrentUser(user);
       setCurrentRole(match.role);
-      setSelectedBarangay(match.role === 'SUPERADMIN' ? 'Pagatpat' : match.barangay);
+      setSelectedBarangay(match.role === 'SUPERADMIN' ? 'All Barangays' : match.barangay);
       setActiveNav('dashboard');
 
       try {
@@ -378,6 +459,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       localStorage.removeItem('serbisure_admin_auth');
       localStorage.removeItem('serbisure_admin_user');
+      localStorage.removeItem('serbisure_admin_token');
     } catch (e) {
       console.error('Failed to clear localStorage:', e);
     }
@@ -475,6 +557,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         searchQuery,
         setSearchQuery,
         barangays,
+        userBarangays,
         verifications,
         selectedVerificationId,
         setSelectedVerificationId,
