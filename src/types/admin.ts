@@ -181,3 +181,29 @@ export interface BookingCompliance {
   bookingStatus?: string;
   status: 'ACTIVE' | 'FLAGGED_THROTTLED' | 'COMPLIANT' | 'DISPUTED' | 'BELOW_MINIMUM_WAGE';
 }
+
+export interface AuditLogEntry {
+  log_id: string;
+  actor: string | null;
+  actor_name: string | null;
+  actor_email: string | null;
+  actor_role: string | null;
+  actor_barangay: string | null;
+  target_user: string | null;
+  target_name: string | null;
+  target_email: string | null;
+  target_role: string | null;
+  target_barangay: string | null;
+  document: string | null;
+  document_id_snapshot: string | null;
+  document_type: string | null;
+  document_number: string | null;
+  action: 'APPROVED' | 'REJECTED' | 'RESET' | 'DELETED' | 'UPLOADED' | 'REPROCESSED' | 'UPDATED' | string;
+  previous_status: string | null;
+  new_status: string | null;
+  reason: string | null;
+  ip_address: string | null;
+  user_agent: string | null;
+  metadata?: Record<string, any>;
+  created_at: string;
+}
