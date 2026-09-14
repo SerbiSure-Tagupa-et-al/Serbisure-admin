@@ -4,7 +4,7 @@ export type AccountRole = 'KASAMBAHAY' | 'HOMEOWNER';
 
 export type DocumentType = 'NBI CLEARANCE' | 'Police Clearance' | 'National ID' | 'Clearances (NBI + Police)' | string;
 
-export type VerificationStatus = 'PENDING / REVIEW' | 'VERIFIED' | 'REJECTED';
+export type VerificationStatus = 'PENDING / REVIEW' | 'VERIFIED' | 'REJECTED' | 'NO_DOCUMENTS';
 
 export interface BarangayStats {
   name: string;
@@ -45,6 +45,10 @@ export interface VerificationRequest {
   recordStatus: 'Clear Record' | 'Under Review' | 'Flagged';
   documentImage: string;
   documentImageBack?: string;
+  hasDocuments?: boolean;
+  hasLguCoverage?: boolean;
+  userId?: string;
+  address?: string;
 
   // Package & Secondary Companion Document Fields
   isPackage?: boolean;
@@ -138,6 +142,7 @@ export interface UserProfile {
   barangay: string;
   city: string;
   verified: boolean;
+  hasLguCoverage?: boolean;
   skills?: string[];
   hourlyRate?: number;
   status: 'ACTIVE' | 'PENDING' | 'SUSPENDED';
@@ -173,5 +178,5 @@ export interface BookingCompliance {
   };
   startDate: string;
   barangay?: string;
-  status: 'ACTIVE' | 'FLAGGED_THROTTLED' | 'COMPLIANT' | 'DISPUTED';
+  status: 'ACTIVE' | 'FLAGGED_THROTTLED' | 'COMPLIANT' | 'DISPUTED' | 'BELOW_MINIMUM_WAGE';
 }
