@@ -79,16 +79,25 @@ export interface MonthlyTrendPoint {
   month: string;
   year: number;
   employed: number;
+  on_the_job?: number;
   available: number;
   total: number;
 }
 
-export async function fetchMonthlyTrend(barangay?: string): Promise<{ trend: MonthlyTrendPoint[] }> {
+export interface MonthlyTrendResponse {
+  trend: MonthlyTrendPoint[];
+  barangay?: string;
+  total_workers?: number;
+  current_on_the_job?: number;
+  current_available?: number;
+}
+
+export async function fetchMonthlyTrend(barangay?: string): Promise<MonthlyTrendResponse> {
   const params = new URLSearchParams();
   if (barangay && barangay !== 'All Barangays') params.append('barangay', barangay);
 
   const query = params.toString() ? `?${params.toString()}` : '';
-  return fetchApi<{ trend: MonthlyTrendPoint[] }>(`/api/v1/accounts/admin/monthly-trend/${query}`);
+  return fetchApi<MonthlyTrendResponse>(`/api/v1/accounts/admin/monthly-trend/${query}`);
 }
 
 export interface AdminLoginResponse {
