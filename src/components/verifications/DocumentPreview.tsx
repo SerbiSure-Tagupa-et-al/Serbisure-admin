@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Eye, CheckCircle, XCircle, AlertTriangle, X, FileText, RotateCcw, RotateCw, Send, ExternalLink, Copy, Check, UserCheck, Mail, Phone } from 'lucide-react';
+import { Eye, CheckCircle, XCircle, AlertTriangle, X, FileText, RotateCcw, RotateCw, Send, ExternalLink, Copy, Check, UserCheck, Mail, Phone, FileQuestion, MapPin, Clock } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { IdentityComparisonModal } from './IdentityComparisonModal';
 import { getOptimizedWebpUrl } from '../../utils/imageOptimizer';
@@ -36,6 +36,261 @@ export const DocumentPreview: React.FC = () => {
       </div>
     );
   }
+
+  const isUnsubmitted = selectedItem.status === 'NO_DOCUMENTS' || selectedItem.hasDocuments === false;
+
+  if (isUnsubmitted) {
+    const isKasambahay = selectedItem.role === 'KASAMBAHAY';
+    return (
+      <>
+        <div className="bg-white rounded-3xl p-6 sm:p-8 h-full flex flex-col justify-between overflow-y-auto">
+        <div>
+          {/* Header Bar */}
+          <div className="pb-5 border-b border-zinc-100">
+            <div className="flex items-center justify-between gap-3 mb-1.5">
+              <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 font-display">
+                Resident Profile
+              </span>
+
+              {/* Minimalist, cleanly centered badges */}
+              <div className="flex items-center gap-1.5 shrink-0 flex-nowrap">
+                <span className="inline-flex items-center justify-center gap-1 px-2.5 py-0.5 rounded-full bg-[#F0F0EC] text-zinc-600 text-xs font-semibold whitespace-nowrap">
+                  <MapPin className="w-3 h-3 text-zinc-400 shrink-0" />
+                  <span>Brgy. {(selectedItem.barangay || 'Unassigned').replace(/^Brgy\.?\s*/i, '')}</span>
+                </span>
+                {selectedItem.hasLguCoverage === false && (
+                  <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-amber-50/90 text-amber-700 text-[10px] font-semibold border border-amber-200/50 whitespace-nowrap">
+                    No LGU Coverage
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <h3 className="text-xl font-black font-display text-[#0D0D11] tracking-tight">
+              Awaiting Document Submission
+            </h3>
+          </div>
+
+          {/* Feedback Toast */}
+          {feedbackMessage && (
+            <div className="my-4 px-4 py-3 bg-emerald-50 text-emerald-800 text-xs font-bold rounded-2xl flex items-center justify-between animate-in fade-in">
+              <span>{feedbackMessage}</span>
+              <Check className="w-4 h-4 text-emerald-600" />
+            </div>
+          )}
+
+          {/* Empty Status Banner */}
+          <div className="my-6 p-6 rounded-3xl bg-amber-50/60 border border-amber-200/60 flex flex-col sm:flex-row items-center gap-5 text-center sm:text-left">
+            <div className="w-14 h-14 rounded-2xl bg-amber-100 flex items-center justify-center shrink-0 text-amber-600">
+              <FileQuestion className="w-7 h-7" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-amber-950 font-display">
+                No Clearances or Identification Uploaded
+              </h4>
+              <p className="text-xs text-amber-800/80 mt-1 leading-relaxed">
+                {isKasambahay
+                  ? `${selectedItem.name} is registered as a Kasambahay worker. Statutory clearances (NBI and Police Clearances) are required to complete verification and enable work placements.`
+                  : `${selectedItem.name} is registered as a Homeowner. PhilSys National ID (Front & Back) is required for identity verification and account approval.`}
+              </p>
+            </div>
+          </div>
+
+          {/* User Profile Summary Card */}
+          <div className="p-5 rounded-3xl bg-[#FBFBFA] border border-zinc-100 space-y-4">
+            <div className="flex items-center gap-3.5">
+              <div 
+                onClick={() => setIsComparisonModalOpen(true)}
+                className="w-12 h-12 rounded-2xl overflow-hidden bg-zinc-200 shrink-0 cursor-pointer hover:ring-2 hover:ring-[#FFB380] transition-all relative group"
+                title="Click to view full profile photo"
+              >
+                {selectedItem.avatar ? (
+                  <img
+                    src={getOptimizedWebpUrl(selectedItem.avatar, { width: 96, height: 96, quality: 'auto' })}
+                    alt={selectedItem.name}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center font-bold text-zinc-500">
+                    {selectedItem.name.slice(0, 2).toUpperCase()}
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-base font-black font-display text-zinc-900 leading-tight truncate">
+                    {selectedItem.name}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsComparisonModalOpen(true)}
+                    className="text-[11px] font-bold text-[#FFB380] hover:text-[#e89965] flex items-center gap-1 cursor-pointer transition-colors shrink-0"
+                    title="Inspect Profile Photo"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>Inspect Photo</span>
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-zinc-200 text-zinc-800">
+                    {isKasambahay ? 'Kasambahay Worker' : 'Homeowner'}
+                  </span>
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600">
+                    Not Submitted
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 text-xs border-t border-zinc-200/50">
+              <div className="flex items-center gap-2 text-zinc-600">
+                <Mail className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                <span className="truncate">{selectedItem.email || 'No email provided'}</span>
+              </div>
+              <div className="flex items-center gap-2 text-zinc-600">
+                <Phone className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                <span>{selectedItem.contactNumber || 'No phone provided'}</span>
+              </div>
+              <div className="flex items-center gap-2 text-zinc-600">
+                <MapPin className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                <span className="truncate">{selectedItem.address || `Brgy. ${selectedItem.barangay || 'Unassigned'}`}</span>
+              </div>
+              <div className="flex items-center gap-2 text-zinc-600">
+                <Clock className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                <span>Registered: Recent</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Required Documents Checklist */}
+          <div className="mt-6">
+            <h5 className="text-[11px] font-black uppercase tracking-wider text-zinc-400 font-display mb-3">
+              Required Submission Checklist
+            </h5>
+            <div className="space-y-2">
+              {isKasambahay ? (
+                <>
+                  <div className="p-3.5 rounded-2xl bg-white border border-zinc-200 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-7 h-7 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-400">
+                        <FileText className="w-3.5 h-3.5" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-zinc-900">NBI Clearance</div>
+                        <div className="text-[10px] text-zinc-400 font-medium">Valid statutory clearance with QR code</div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
+                      Pending Upload
+                    </span>
+                  </div>
+                  <div className="p-3.5 rounded-2xl bg-white border border-zinc-200 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-7 h-7 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-400">
+                        <FileText className="w-3.5 h-3.5" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-zinc-900">National Police Clearance</div>
+                        <div className="text-[10px] text-zinc-400 font-medium">Local PNP verification document</div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
+                      Pending Upload
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="p-3.5 rounded-2xl bg-white border border-zinc-200 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-7 h-7 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-400">
+                        <FileText className="w-3.5 h-3.5" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-zinc-900">PhilSys National ID (Front)</div>
+                        <div className="text-[10px] text-zinc-400 font-medium">Photo ID with full name and demographic data</div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
+                      Pending Upload
+                    </span>
+                  </div>
+                  <div className="p-3.5 rounded-2xl bg-white border border-zinc-200 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-7 h-7 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-400">
+                        <FileText className="w-3.5 h-3.5" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-zinc-900">PhilSys National ID (Back)</div>
+                        <div className="text-[10px] text-zinc-400 font-medium">QR code and security features</div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
+                      Pending Upload
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="pt-6 border-t border-zinc-100 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              const info = `${selectedItem.name} (${selectedItem.role})\nEmail: ${selectedItem.email}\nPhone: ${selectedItem.contactNumber}\nBarangay: ${selectedItem.barangay}`;
+              navigator.clipboard.writeText(info);
+              setCopiedNumber(true);
+              setTimeout(() => setCopiedNumber(false), 2000);
+            }}
+            className="flex-1 py-3 px-4 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-bold font-display transition-all flex items-center justify-center gap-2 cursor-pointer border-0"
+          >
+            {copiedNumber ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4 text-zinc-500" />}
+            <span>{copiedNumber ? 'Contact Copied!' : 'Copy Contact Info'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setFeedbackMessage(`Submission reminder sent to ${selectedItem.name}`);
+              setTimeout(() => setFeedbackMessage(null), 3500);
+            }}
+            className="flex-1 py-3 px-4 rounded-full bg-[#0D0D11] hover:bg-black text-white text-xs font-bold font-display transition-all flex items-center justify-center gap-2 cursor-pointer border-0"
+          >
+            <Send className="w-4 h-4 text-[#FFB380]" />
+            <span>Send Reminder</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Profile Photo Zoom & Inspect Modal for Unsubmitted Resident */}
+      <IdentityComparisonModal
+        isOpen={isComparisonModalOpen}
+        onClose={() => setIsComparisonModalOpen(false)}
+        hasDocuments={false}
+        user={{
+          name: selectedItem.name,
+          role: selectedItem.role,
+          email: selectedItem.email,
+          contactNumber: selectedItem.contactNumber,
+          avatar: selectedItem.avatar,
+          barangay: selectedItem.barangay,
+          hasLguCoverage: selectedItem.hasLguCoverage,
+          idName: 'N/A (No Documents Submitted)',
+        }}
+        document={{
+          documentType: selectedItem.documentType || 'No Documents Submitted',
+          documentNumber: selectedItem.documentNumber || 'Not Available',
+          documentImage: '',
+          status: 'NO_DOCUMENTS',
+          hasDocuments: false,
+        }}
+      />
+    </>
+  );
+}
 
   const handleApprove = async () => {
     await approveVerification(selectedItem.id);
@@ -172,13 +427,21 @@ export const DocumentPreview: React.FC = () => {
       <div className="bg-white rounded-3xl p-8 flex flex-col justify-between h-full">
         <div>
           {/* Title and Barangay */}
-          <div className="flex items-center justify-between pb-5">
+          <div className="flex items-center justify-between pb-5 border-b border-zinc-100">
             <h3 className="text-xl font-black font-display text-[#0D0D11] tracking-tight">
               Document Preview
             </h3>
-            <span className="text-xs font-bold font-display text-zinc-400 bg-[#F0F0EC] px-3 py-1 rounded-full">
-              Brgy. {selectedItem.barangay || 'Pagatpat'}
-            </span>
+            <div className="flex items-center gap-1.5 shrink-0 flex-nowrap">
+              <span className="inline-flex items-center justify-center gap-1 px-2.5 py-0.5 rounded-full bg-[#F0F0EC] text-zinc-600 text-xs font-semibold whitespace-nowrap">
+                <MapPin className="w-3 h-3 text-zinc-400 shrink-0" />
+                <span>Brgy. {(selectedItem.barangay || 'Pagatpat').replace(/^Brgy\.?\s*/i, '')}</span>
+              </span>
+              {selectedItem.hasLguCoverage === false && (
+                <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-amber-50/90 text-amber-700 text-[10px] font-semibold border border-amber-200/50 whitespace-nowrap">
+                  No LGU Coverage
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Feedback Alert Toast */}
@@ -320,6 +583,17 @@ export const DocumentPreview: React.FC = () => {
                   <h4 className="text-base font-black font-display text-[#0D0D11]">
                     {selectedItem.name}
                   </h4>
+                  {selectedItem.barangay && (
+                    <p className="text-[11px] text-zinc-700 flex items-center gap-1 mt-0.5 font-bold">
+                      <MapPin className="w-3 h-3 text-[#FFB380] shrink-0" />
+                      <span>Brgy. {selectedItem.barangay}</span>
+                      {selectedItem.hasLguCoverage === false && (
+                        <span className="ml-1 text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                          No LGU
+                        </span>
+                      )}
+                    </p>
+                  )}
                   {selectedItem.email && (
                     <p className="text-[11px] text-zinc-500 flex items-center gap-1 mt-0.5 font-medium">
                       <Mail className="w-3 h-3 text-zinc-400 shrink-0" />
@@ -638,6 +912,7 @@ export const DocumentPreview: React.FC = () => {
           contactNumber: selectedItem.contactNumber,
           avatar: selectedItem.avatar,
           barangay: selectedItem.barangay,
+          hasLguCoverage: selectedItem.hasLguCoverage,
           idName: idName,
         }}
         document={{
