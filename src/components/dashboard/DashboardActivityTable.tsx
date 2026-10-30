@@ -22,6 +22,8 @@ import {
 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import type { BookingCompliance, VerificationRequest, AuditLogEntry } from '../../types/admin';
+import { AuditCorrectionDetails } from './AuditCorrectionDetails';
+import { correctionSummary } from '../../data/reviewerCorrections';
 
 const ITEMS_PER_PAGE = 5;
 
@@ -316,8 +318,9 @@ function buildPdfReport(
       const actionPill = getAuditActionPill(a.action);
       const targetName = a.target_name || 'Resident';
       const targetSub = [formatDocType(a.document_type), a.target_barangay ? `Brgy. ${a.target_barangay}` : ''].filter(Boolean).join(' • ') || '—';
-      const statusChange = formatStatusTransition(a.previous_status, a.new_status);
-      const reasonDisplay = formatReason(a.reason);
+      const edits = correctionSummary(a.metadata);
+      const statusChange = edits ? 'Details corrected' : formatStatusTransition(a.previous_status, a.new_status);
+      const reasonDisplay = edits || formatReason(a.reason);
       const timeDisplay = formatAuditDate(a.created_at);
       const logSub = a.log_id ? `ID #${String(a.log_id).slice(-6)}` : '';
 
@@ -621,10 +624,10 @@ export const DashboardActivityTable: React.FC = () => {
   }, [currentRole, selectedBarangay, bookings]);
 
   const scopedAuditLogs = useMemo(() => {
+    const normalize = (value?: string | null) => (value || '').replace(/^(brgy\.?|barangay)\s+/i, '').trim().toLowerCase();
     return (currentRole === 'ADMIN' && selectedBarangay)
       ? auditLogs.filter(a => 
-          (a.actor_barangay || '').toLowerCase() === selectedBarangay.toLowerCase() ||
-          (a.target_barangay || '').toLowerCase() === selectedBarangay.toLowerCase()
+          normalize(a.target_barangay) === normalize(selectedBarangay)
         )
       : auditLogs;
   }, [currentRole, selectedBarangay, auditLogs]);
@@ -674,7 +677,8 @@ export const DashboardActivityTable: React.FC = () => {
       (a.document_type || '').toLowerCase().includes(q) ||
       formatDocType(a.document_type).toLowerCase().includes(q) ||
       (a.action || '').toLowerCase().includes(q) ||
-      (a.reason || '').toLowerCase().includes(q)
+      (a.reason || '').toLowerCase().includes(q) ||
+      correctionSummary(a.metadata).toLowerCase().includes(q)
     );
   }, [scopedAuditLogs, searchTerm]);
 
@@ -1281,7 +1285,7 @@ export const DashboardActivityTable: React.FC = () => {
                         {/* Transition / Reason Notes */}
                         <td data-label="Change" className="py-3 px-3">
                           <div className="max-w-xs">
-                            {(log.previous_status || log.new_status) ? (
+                            {correctionSummary(log.metadata) ? <AuditCorrectionDetails metadata={log.metadata} /> : (log.previous_status || log.new_status) ? (
                               <div className="flex items-center gap-1 text-[11px]">
                                 <span className="text-zinc-400">{log.previous_status || 'Pending'}</span>
                                 <span className="text-zinc-300 font-bold">→</span>

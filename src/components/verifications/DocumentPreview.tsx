@@ -4,6 +4,7 @@ import { useAdmin } from '../../context/AdminContext';
 import { IdentityComparisonModal } from './IdentityComparisonModal';
 import { getOptimizedWebpUrl } from '../../utils/imageOptimizer';
 import { groupVerificationApplicants } from '../../data/verificationApplicants';
+import { ReviewerCorrectionsForm } from './ReviewerCorrectionsForm';
 
 export const DocumentPreview: React.FC = () => {
   const { 
@@ -13,6 +14,7 @@ export const DocumentPreview: React.FC = () => {
     approveVerification, 
     rejectVerification, 
     resetVerification,
+    refreshReviewData,
     isComparisonModalOpen,
     setIsComparisonModalOpen
   } = useAdmin();
@@ -392,14 +394,14 @@ export const DocumentPreview: React.FC = () => {
 
   const docNumber = (idSide === 'back' && hasSecondary && selectedItem.secondaryDocumentNumber)
     ? selectedItem.secondaryDocumentNumber
-    : (activeOcrData?.clearance_number || activeOcrData?.philsys_number || activeOcrData?.document_number || selectedItem.documentNumber || 'Not Detected');
+    : (selectedItem.documentNumber || activeOcrData?.clearance_number || activeOcrData?.philsys_number || activeOcrData?.document_number || 'Not Detected');
   
   // PhilSys National IDs do not have an issuance date printed on the card
   const issuedDate = isNationalId 
     ? 'N/A (PhilSys National ID)' 
     : ((idSide === 'back' && hasSecondary && selectedItem.secondaryIssuedDate)
         ? selectedItem.secondaryIssuedDate
-        : (activeOcrData?.date_issued || selectedItem.issuedDate || 'Not Detected'));
+        : (selectedItem.issuedDate || activeOcrData?.date_issued || 'Not Detected'));
   
   const rawValidity = (idSide === 'back' && hasSecondary && selectedItem.secondaryValidityDate)
     ? selectedItem.secondaryValidityDate
@@ -737,6 +739,8 @@ export const DocumentPreview: React.FC = () => {
                 </span>
               </div>
             </div>
+
+            <ReviewerCorrectionsForm key={selectedItem.id} documentId={selectedItem.id} onSaved={refreshReviewData} />
 
             {/* Discrepancies if any */}
             {selectedItem.ocrDiscrepancies && selectedItem.ocrDiscrepancies.length > 0 && (

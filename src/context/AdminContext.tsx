@@ -58,6 +58,7 @@ interface AdminContextType {
   isLoadingDashboardStats: boolean;
   isLoadingDashboardActivity: boolean;
   refreshVerifications: () => Promise<void>;
+  refreshReviewData: () => Promise<void>;
   refreshUsers: () => Promise<void>;
   refreshDashboardStats: () => Promise<void>;
   refreshDashboardActivity: () => Promise<void>;
@@ -478,12 +479,16 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     purgeAdminStorage();
   };
 
+  const refreshReviewData = async () => {
+    await Promise.all([refreshVerifications(), refreshAuditLogs(), refreshUsers(), refreshDashboardStats(), refreshMonthlyTrend()]);
+    window.dispatchEvent(new Event('serbisure:verification_changed'));
+  };
+
   const reviewDocument = async (id: string, action: 'approve' | 'reject' | 'reset', reason?: string) => {
     const result = await reviewVerification(id, action, reason, currentUser?.email || currentUser?.username);
     // Only the selected document changes, after the server confirms its audit-backed decision.
     setVerifications(previous => previous.map(item => item.id === id ? { ...item, ...result.document } : item));
-    await Promise.all([refreshVerifications(), refreshAuditLogs(), refreshUsers(), refreshDashboardStats(), refreshMonthlyTrend()]);
-    window.dispatchEvent(new Event('serbisure:verification_changed'));
+    await refreshReviewData();
   };
 
   const approveVerification = (id: string) => reviewDocument(id, 'approve');
@@ -532,6 +537,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         isLoadingDashboardStats,
         isLoadingDashboardActivity,
         refreshVerifications,
+        refreshReviewData,
         refreshUsers,
         refreshDashboardStats,
         refreshDashboardActivity,
