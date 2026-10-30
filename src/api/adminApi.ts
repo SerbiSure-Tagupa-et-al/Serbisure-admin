@@ -19,6 +19,26 @@ export async function fetchVerificationQueue(
   return fetchApi<VerificationRequest[]>(`/api/v1/verifications/admin/queue/${query}`);
 }
 
+export interface ExpiryPreview {
+  scope: string;
+  as_of: string;
+  document_count: number;
+  worker_count: number;
+  confirmation_token: string;
+}
+
+export function previewExpiredClearances(): Promise<ExpiryPreview> {
+  return fetchApi<ExpiryPreview>('/api/v1/verifications/admin/expired-clearances/');
+}
+
+export function processExpiredClearances(confirmationToken: string): Promise<{
+  document_count: number; worker_count: number; message: string;
+}> {
+  return fetchApi('/api/v1/verifications/admin/expired-clearances/', {
+    method: 'POST', body: JSON.stringify({ confirmation_token: confirmationToken }), maxRetries: 0,
+  });
+}
+
 export async function reviewVerification(
   documentId: string,
   action: 'approve' | 'reject' | 'reset',
@@ -183,6 +203,7 @@ export interface VerificationStatusStats {
   pending: number;
   unverified: number;
   rejected: number;
+  expired: number;
 }
 
 export interface VerificationStatusStatsResponse {

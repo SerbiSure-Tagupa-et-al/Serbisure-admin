@@ -4,7 +4,7 @@ export type AccountRole = 'KASAMBAHAY' | 'HOMEOWNER' | 'BARANGAY' | 'SUPERADMIN'
 
 export type DocumentType = 'NBI CLEARANCE' | 'Police Clearance' | 'National ID' | 'Clearances (NBI + Police)' | string;
 
-export type VerificationStatus = 'PENDING / REVIEW' | 'VERIFIED' | 'REJECTED' | 'NO_DOCUMENTS';
+export type VerificationStatus = 'PENDING / REVIEW' | 'VERIFIED' | 'REJECTED' | 'EXPIRED' | 'NO_DOCUMENTS';
 
 export interface BarangayStats {
   name: string;
@@ -24,6 +24,7 @@ export interface BarangayStats {
   pending?: number;
   verified?: number;
   rejected?: number;
+  expired?: number;
   noDocuments?: number;
 }
 
@@ -60,6 +61,9 @@ export interface VerificationRequest {
   issuedDate: string;
   validityDate: string;
   status: VerificationStatus;
+  applicantStatus?: VerificationStatus;
+  isExpired?: boolean;
+  validUntil?: string | null;
   primaryStatus?: VerificationStatus;
   recordStatus: 'Clear Record' | 'Under Review' | 'Flagged';
   documentImage: string;

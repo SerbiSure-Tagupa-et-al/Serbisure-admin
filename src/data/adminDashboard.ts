@@ -15,7 +15,8 @@ export function validateDashboardSnapshot(value: DashboardStatsResponse): Dashbo
         ![row.totalRegistered, row.totalWorkers, row.employed, row.available, row.pending, row.verified, row.rejected, row.noDocuments].every(count) ||
         row.employed + row.available !== row.totalWorkers || row.totalWorkers > row.totalRegistered! ||
         !count(row.employmentRatio) || row.employmentRatio > 100 ||
-        row.pending! + row.verified! + row.rejected! + row.noDocuments! !== row.totalRegistered) {
+        !count(row.expired ?? 0) ||
+        row.pending! + row.verified! + row.rejected! + (row.expired ?? 0) + row.noDocuments! !== row.totalRegistered) {
       throw new Error('The barangay directory returned inconsistent data. Please retry.');
     }
   }

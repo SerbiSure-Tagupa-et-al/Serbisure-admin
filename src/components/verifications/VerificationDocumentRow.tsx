@@ -42,7 +42,7 @@ export const VerificationDocumentRow: React.FC<Props> = ({ document, selected, o
             <span className="mt-1 block text-[11px] text-zinc-500">{document.submittedDate}</span>
           </span>
         </button>
-        <VerificationStatusBadge status={document.status} />
+        <VerificationStatusBadge status={document.isExpired && document.status !== 'REJECTED' ? 'EXPIRED' : document.status} />
         <div className="verification-document-actions flex flex-wrap items-center gap-2" aria-busy={busy}>
           <button type="button" onClick={onReview} className="px-2 py-2 text-xs font-semibold text-zinc-600 hover:text-zinc-950 cursor-pointer">Review</button>
           {document.status === 'VERIFIED' ? (
@@ -57,6 +57,7 @@ export const VerificationDocumentRow: React.FC<Props> = ({ document, selected, o
           )}
         </div>
       </div>
+      {document.isExpired && <p className="mt-2 text-xs text-orange-800">Expired on {document.validityDate}. {document.status === 'REJECTED' ? 'Renewal requested.' : 'Process expirations to request a renewed clearance.'}</p>}
       {document.status === 'REJECTED' && document.notes && <p className="mt-2 text-xs text-rose-700 break-words">{document.notes}</p>}
       {rejecting && (
         <form className="mt-3 flex flex-wrap items-center gap-2" onSubmit={event => { event.preventDefault(); void decide('reject'); }}>

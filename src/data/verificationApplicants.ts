@@ -50,7 +50,8 @@ export function groupVerificationApplicants(records: VerificationRequest[]): Ver
         const first = order.indexOf(documentKind(a)), second = order.indexOf(documentKind(b));
         return (first < 0 ? order.length : first) - (second < 0 ? order.length : second);
       }),
-      status: applicantStatus(documents, user.role),
+      // Eligibility belongs to the backend; the fallback supports older responses.
+      status: user.applicantStatus ?? applicantStatus(documents, user.role),
       submittedDate: documents.length ? user.submittedDate : 'Not Submitted',
       submittedAt: documents.length ? submissionTime(user) : 0,
     };
@@ -62,7 +63,8 @@ function submissionTime(record: VerificationRequest): number {
 }
 
 export function preferredDocument(applicant: VerificationApplicant): VerificationRequest {
-  return applicant.documents.find(document => document.status === 'PENDING / REVIEW')
+  return applicant.documents.find(document => document.isExpired && document.status !== 'REJECTED')
+    || applicant.documents.find(document => document.status === 'PENDING / REVIEW')
     || applicant.documents.find(document => document.status === 'REJECTED')
     || applicant.documents[0] || applicant.user;
 }
