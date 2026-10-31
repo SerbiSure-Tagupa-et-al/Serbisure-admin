@@ -346,7 +346,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch {
       if (dashboardGate.current.accepts(id, dashboardScope)) {
         setDashboardSource(null);
-        setDashboardFailure({ scope: dashboardScope, message: 'Could not load database statistics. Check your connection and retry.' });
+        setDashboardFailure({ scope: dashboardScope, message: 'Could not load dashboard statistics. Use Sync Real-Time to retry.' });
       }
     } finally {
       if (dashboardGate.current.accepts(id, dashboardScope)) setIsLoadingDashboardStats(false);
