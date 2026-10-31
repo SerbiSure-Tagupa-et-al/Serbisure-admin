@@ -6,8 +6,9 @@ import { getOptimizedWebpUrl } from '../../utils/imageOptimizer';
 import { groupVerificationApplicants, preferredDocument } from '../../data/verificationApplicants';
 import { VerificationStatusBadge } from './VerificationStatusBadge';
 import { VerificationDocumentRow } from './VerificationDocumentRow';
+import { ProcessExpirationsButton } from './ProcessExpirationsButton';
 
-type StatusFilter = 'PENDING' | 'VERIFIED' | 'REJECTED' | 'NO_DOCUMENTS' | 'ALL';
+type StatusFilter = 'PENDING' | 'VERIFIED' | 'REJECTED' | 'EXPIRED' | 'NO_DOCUMENTS' | 'ALL';
 
 export const VerificationQueue: React.FC = () => {
   const { 
@@ -21,6 +22,10 @@ export const VerificationQueue: React.FC = () => {
     resetVerification,
     isLoadingVerifications,
     refreshVerifications,
+    refreshUsers,
+    refreshDashboardStats,
+    refreshMonthlyTrend,
+    refreshAuditLogs,
     currentRole,
     selectedBarangay,
     userBarangays,
@@ -73,7 +78,7 @@ export const VerificationQueue: React.FC = () => {
 
   // Strictly scope queue to assigned barangay if logged in as local LGU officer or unassigned perspective
   const scopedVerifications = (currentRole === 'ADMIN' && selectedBarangay)
-    ? verifications.filter(v => (v.barangay || '').toLowerCase() === selectedBarangay.toLowerCase())
+    ? verifications.filter(v => cleanBarangayName(v.barangay).toLowerCase() === cleanBarangayName(selectedBarangay).toLowerCase())
     : (selectedBarangay === 'UNASSIGNED'
         ? verifications.filter(v => v.hasLguCoverage === false || (v.barangay || '').toLowerCase() === 'unassigned')
         : verifications);
@@ -93,6 +98,7 @@ export const VerificationQueue: React.FC = () => {
   const pendingCount = applicants.filter(v => v.status === 'PENDING / REVIEW').length;
   const verifiedCount = applicants.filter(v => v.status === 'VERIFIED').length;
   const rejectedCount = applicants.filter(v => v.status === 'REJECTED').length;
+  const expiredCount = applicants.filter(v => v.status === 'EXPIRED').length;
   const noDocumentsCount = applicants.filter(v => v.status === 'NO_DOCUMENTS').length;
   const totalCount = applicants.length;
 
@@ -102,6 +108,7 @@ export const VerificationQueue: React.FC = () => {
       if (statusFilter === 'PENDING' && v.status !== 'PENDING / REVIEW') return false;
       if (statusFilter === 'VERIFIED' && v.status !== 'VERIFIED') return false;
       if (statusFilter === 'REJECTED' && v.status !== 'REJECTED') return false;
+      if (statusFilter === 'EXPIRED' && v.status !== 'EXPIRED') return false;
       if (statusFilter === 'NO_DOCUMENTS' && v.status !== 'NO_DOCUMENTS') return false;
 
       return true;
@@ -113,7 +120,7 @@ export const VerificationQueue: React.FC = () => {
     });
 
   // Pagination State (10 items per page)
-  const ITEMS_PER_PAGE = 10;
+  const ITEMS_PER_PAGE = 5;
   const [currentPage, setCurrentPage] = useState<number>(1);
 
   // Total filtered records
@@ -261,12 +268,18 @@ export const VerificationQueue: React.FC = () => {
         </div>
       </div>
 
+      <ProcessExpirationsButton onProcessed={async () => {
+        await Promise.all([refreshVerifications(), refreshUsers(), refreshDashboardStats(), refreshMonthlyTrend(), refreshAuditLogs()]);
+        window.dispatchEvent(new Event('serbisure:verification_changed'));
+      }} />
+
       {/* Status Filter Tabs - Unified Pill Badges */}
       <div className="grid grid-cols-3 sm:flex sm:flex-wrap items-center gap-1.5 sm:gap-2 pb-4">
         {[
           { id: 'PENDING', label: 'Pending', icon: Clock, count: pendingCount },
           { id: 'VERIFIED', label: 'Verified', icon: CheckCircle, count: verifiedCount },
           { id: 'REJECTED', label: 'Rejected', icon: XCircle, count: rejectedCount },
+          { id: 'EXPIRED', label: 'Expired', icon: Clock, count: expiredCount },
           { id: 'NO_DOCUMENTS', label: 'No Documents', icon: FileQuestion, count: noDocumentsCount },
           { id: 'ALL', label: 'All', icon: null, count: totalCount },
         ].map((tab) => {

@@ -41,6 +41,31 @@ test('malformed and internally inconsistent statistics are errors, never demo fa
   assert.throws(() => validateDashboardSnapshot({ metrics, barangays: [{ ...row, employed: 110 }] }));
   assert.equal(validateDashboardSnapshot({ metrics, barangays: [row] }).barangays[0], row);
 });
+
+test('Django rounded skills percentages do not discard valid dashboard totals', () => {
+  const value = {
+    metrics: { totalWorkers: 16, totalEmployed: 3, totalAvailable: 13, employmentRatio: 19, totalHomeowners: 35, pendingVerifications: 20 },
+    barangays: [],
+    skills: { totalWorkers: 16, categories: [
+      { category: 'Cleaning', count: 5, percentage: 31.2 },
+      { category: 'Cooking', count: 5, percentage: 31.2 },
+      { category: 'Child_care', count: 4, percentage: 25 },
+      { category: 'Caregiver', count: 1, percentage: 6.2 },
+      { category: 'Laundry', count: 1, percentage: 6.2 },
+      { category: 'All-around', count: 0, percentage: 0 },
+    ] },
+  };
+  assert.equal(validateDashboardSnapshot(value), value);
+  const withPercentage = percentage => ({ ...value, skills: { ...value.skills,
+    categories: value.skills.categories.map(item => item.category === 'Caregiver' ? { ...item, percentage } : item),
+  } });
+  // Both tie-breaking conventions round to the nearest tenth of a percent.
+  assert.doesNotThrow(() => validateDashboardSnapshot(withPercentage(6.3)));
+  for (const invalid of [6.1, 6.4, -1, 101, NaN, Infinity, '6.2']) {
+    assert.throws(() => validateDashboardSnapshot(withPercentage(invalid)));
+  }
+  assert.throws(() => validateDashboardSnapshot({ ...value, metrics: { ...value.metrics, totalAvailable: 14 } }));
+});
 test('late responses cannot replace a newer request, another jurisdiction or a logged-out session', () => {
   const gate = new DashboardRequestGate();
   const first = gate.begin('admin:all'); const second = gate.begin('admin:all');

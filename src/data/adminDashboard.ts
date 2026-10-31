@@ -15,16 +15,20 @@ export function validateDashboardSnapshot(value: DashboardStatsResponse): Dashbo
         ![row.totalRegistered, row.totalWorkers, row.employed, row.available, row.pending, row.verified, row.rejected, row.noDocuments].every(count) ||
         row.employed + row.available !== row.totalWorkers || row.totalWorkers > row.totalRegistered! ||
         !count(row.employmentRatio) || row.employmentRatio > 100 ||
-        row.pending! + row.verified! + row.rejected! + row.noDocuments! !== row.totalRegistered) {
+        !count(row.expired ?? 0) ||
+        row.pending! + row.verified! + row.rejected! + (row.expired ?? 0) + row.noDocuments! !== row.totalRegistered) {
       throw new Error('The barangay directory returned inconsistent data. Please retry.');
     }
   }
   if (value.skills) {
+    // Python and JavaScript break .05 ties differently. A one-decimal percentage
+    // may differ from the exact ratio by up to .05 percentage points.
+    const roundingTolerance = 0.05 + 1e-9;
     if (value.skills.totalWorkers !== metrics.totalWorkers || !Array.isArray(value.skills.categories) ||
         value.skills.categories.length !== 6 || new Set(value.skills.categories.map(item => item.category)).size !== 6 ||
         value.skills.categories.some(item => !['Cleaning', 'Cooking', 'Child_care', 'Caregiver', 'Laundry', 'All-around'].includes(item.category) ||
           !count(item.count) || item.count > metrics.totalWorkers || !Number.isFinite(item.percentage) || item.percentage < 0 || item.percentage > 100 ||
-          Math.abs(item.percentage - (metrics.totalWorkers ? Math.round(item.count / metrics.totalWorkers * 1000) / 10 : 0)) > 0.01)) {
+          Math.abs(item.percentage - (metrics.totalWorkers ? item.count / metrics.totalWorkers * 100 : 0)) > roundingTolerance)) {
       throw new Error('The skills panel returned inconsistent data. Please retry.');
     }
   }

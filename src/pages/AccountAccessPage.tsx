@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronLeft, ChevronRight, RotateCw, Search } from 'lucide-react';
 import { useAdmin } from '../context/AdminContext';
 import { AccountAccessTable } from '../components/users/AccountAccessTable';
-import { accessPage, filterAccessUsers, type ResidentRoleFilter, type AccessFilter } from '../data/accountAccess';
+import { accessPage, filterAccessUsers, ACCOUNT_ACCESS_PAGE_SIZE, type ResidentRoleFilter, type AccessFilter } from '../data/accountAccess';
 import { useAccountAccessUsers } from '../hooks/useAccountAccessUsers';
 import { AccountAccessHistory } from '../components/users/AccountAccessHistory';
 
@@ -64,7 +64,7 @@ export function AccountAccessPage(): React.ReactElement {
       {!roster.loaded && !roster.error ? <p role="status" className="p-6 text-sm text-zinc-500">Loading accounts…</p> : roster.loaded && !rows.length ? <div className="space-y-4 p-6 sm:p-8"><h2 className="font-bold">{roster.users.length ? 'No matching users' : 'No accounts to manage'}</h2><p className="text-sm leading-6 text-zinc-500">{roster.users.length ? 'Try another name or clear the filters.' : 'Homeowners and Kasambahays you can manage will appear here.'}</p>{roster.users.length > 0 && <button className={secondary} onClick={reset}>Clear filters</button>}</div> : roster.loaded && <>
         <AccountAccessTable users={rows} now={now} onSaved={onSaved} disabled={!!roster.error || roster.loading} />
         <footer className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6 sm:py-6">
-          <p className="text-xs text-zinc-500">Showing {(currentPage - 1) * 10 + 1}–{Math.min(currentPage * 10, filtered.length)} of {filtered.length} {filtered.length === 1 ? 'user' : 'users'}</p>
+          <p className="text-xs text-zinc-500">Showing {(currentPage - 1) * ACCOUNT_ACCESS_PAGE_SIZE + 1}–{Math.min(currentPage * ACCOUNT_ACCESS_PAGE_SIZE, filtered.length)} of {filtered.length} {filtered.length === 1 ? 'user' : 'users'}</p>
           {totalPages > 1 && <nav className="flex items-center gap-4" aria-label="Account pages"><button className={secondary} disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} aria-label="Previous page"><ChevronLeft size={16} /></button><span className="text-xs text-zinc-500">{currentPage} / {totalPages}</span><button className={secondary} disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)} aria-label="Next page"><ChevronRight size={16} /></button></nav>}
         </footer>
       </>}

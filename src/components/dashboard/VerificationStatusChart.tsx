@@ -50,6 +50,16 @@ const STATUS_CONFIG: StatusItemConfig[] = [
     description: 'Account created but no documents uploaded yet',
   },
   {
+    key: 'expired',
+    label: 'Expired',
+    dotColor: '#C2410C',
+    barGradient: 'from-orange-400 to-orange-700',
+    badgeBase: 'bg-orange-50 text-orange-800 border-orange-200',
+    badgeActive: 'bg-orange-700 text-white',
+    footerBadge: 'bg-orange-50 text-orange-800 border-orange-200',
+    description: 'A required clearance has expired and needs renewal',
+  },
+  {
     key: 'rejected',
     label: 'Rejected',
     dotColor: '#F43F5E',
@@ -57,7 +67,7 @@ const STATUS_CONFIG: StatusItemConfig[] = [
     badgeBase: 'bg-rose-50 text-rose-700 border-rose-200/60',
     badgeActive: 'bg-rose-500 text-white shadow-sm shadow-rose-500/20',
     footerBadge: 'bg-rose-50 text-rose-700 border-rose-200/50',
-    description: 'Document invalid, expired, or rejected',
+    description: 'A current required document was rejected by a reviewer',
   },
 ];
 
@@ -77,6 +87,7 @@ export const VerificationStatusChart: React.FC = () => {
     pending: 0,
     unverified: 0,
     rejected: 0,
+    expired: 0,
   });
   const [total, setTotal] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -93,18 +104,27 @@ export const VerificationStatusChart: React.FC = () => {
   // Robust data loader with retry capability
   const loadStats = useCallback(() => setAttempt(value => value + 1), []);
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.addEventListener('serbisure:verification_changed', loadStats);
+    window.addEventListener('focus', loadStats);
+    return () => {
+      window.removeEventListener('serbisure:verification_changed', loadStats);
+      window.removeEventListener('focus', loadStats);
+    };
+  }, [loadStats]);
+  useEffect(() => {
     const bgy = activeBarangay;
     let isMounted = true;
     setIsLoading(true);
     setError(null);
-    setStats({ verified: 0, pending: 0, unverified: 0, rejected: 0 }); setTotal(0);
+    setStats({ verified: 0, pending: 0, unverified: 0, rejected: 0, expired: 0 }); setTotal(0);
 
     const bgyParam = bgy === 'All Barangays' ? undefined : bgy;
 
     fetchVerificationStatusStats(bgyParam, role)
       .then((res) => {
         if (!isMounted) return;
-        setStats(res.stats || { verified: 0, pending: 0, unverified: 0, rejected: 0 });
+        setStats(res.stats || { verified: 0, pending: 0, unverified: 0, rejected: 0, expired: 0 });
         setTotal(res.total ?? 0);
         setError(null);
       })

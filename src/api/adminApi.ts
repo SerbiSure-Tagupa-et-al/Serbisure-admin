@@ -19,6 +19,62 @@ export async function fetchVerificationQueue(
   return fetchApi<VerificationRequest[]>(`/api/v1/verifications/admin/queue/${query}`);
 }
 
+export interface ExpiryPreview {
+  scope: string;
+  as_of: string;
+  document_count: number;
+  worker_count: number;
+  confirmation_token: string;
+}
+
+export function previewExpiredClearances(): Promise<ExpiryPreview> {
+  return fetchApi<ExpiryPreview>('/api/v1/verifications/admin/expired-clearances/');
+}
+
+export function processExpiredClearances(confirmationToken: string): Promise<{
+  document_count: number; worker_count: number; message: string;
+}> {
+  return fetchApi('/api/v1/verifications/admin/expired-clearances/', {
+    method: 'POST', body: JSON.stringify({ confirmation_token: confirmationToken }), maxRetries: 0,
+  });
+}
+
+export interface ReviewerIdentityFields {
+  first_name: string | null;
+  middle_name: string | null;
+  last_name: string | null;
+  date_of_birth: string | null;
+}
+
+export interface ReviewerDocumentFields extends ReviewerIdentityFields {
+  document_number: string | null;
+  date_issued: string | null;
+  valid_until: string | null;
+}
+
+export interface ReviewerCorrectionDetails {
+  version: string;
+  document_type: string;
+  profile: ReviewerIdentityFields;
+  document: ReviewerDocumentFields;
+}
+
+export interface ReviewerCorrectionPatch {
+  version: string;
+  profile?: Partial<ReviewerIdentityFields>;
+  document?: Partial<ReviewerDocumentFields>;
+}
+
+export function fetchReviewerCorrections(documentId: string): Promise<ReviewerCorrectionDetails> {
+  return fetchApi(`/api/v1/verifications/admin/documents/${encodeURIComponent(documentId)}/corrections/`);
+}
+
+export function saveReviewerCorrections(documentId: string, patch: ReviewerCorrectionPatch): Promise<ReviewerCorrectionDetails & { changed: boolean }> {
+  return fetchApi(`/api/v1/verifications/admin/documents/${encodeURIComponent(documentId)}/corrections/`, {
+    method: 'PATCH', body: JSON.stringify(patch), maxRetries: 0,
+  });
+}
+
 export async function reviewVerification(
   documentId: string,
   action: 'approve' | 'reject' | 'reset',
@@ -183,6 +239,7 @@ export interface VerificationStatusStats {
   pending: number;
   unverified: number;
   rejected: number;
+  expired: number;
 }
 
 export interface VerificationStatusStatsResponse {

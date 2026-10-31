@@ -58,6 +58,7 @@ interface AdminContextType {
   isLoadingDashboardStats: boolean;
   isLoadingDashboardActivity: boolean;
   refreshVerifications: () => Promise<void>;
+  refreshReviewData: () => Promise<void>;
   refreshUsers: () => Promise<void>;
   refreshDashboardStats: () => Promise<void>;
   refreshDashboardActivity: () => Promise<void>;
@@ -173,6 +174,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const [verifications, setVerifications] = useState<VerificationRequest[]>([]);
+  const verificationRequestVersion = useRef(0);
   const [selectedVerificationId, setSelectedVerificationId] = useState<string>('');
   const [isComparisonModalOpen, setIsComparisonModalOpen] = useState<boolean>(false);
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -271,12 +273,14 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Load live verification requests from Django backend
   const refreshVerifications = useCallback(async () => {
+    const version = ++verificationRequestVersion.current;
     setIsLoadingVerifications(true);
     try {
       const bgyParam = currentRole === 'SUPERADMIN' 
         ? (selectedBarangay === 'All Barangays' ? undefined : selectedBarangay) 
         : selectedBarangay;
       const liveQueue = await fetchVerificationQueue(undefined, undefined, bgyParam);
+      if (version !== verificationRequestVersion.current) return;
       setVerifications(liveQueue || []);
       setSelectedVerificationId((current) => {
         if (!liveQueue || liveQueue.length === 0) return '';
@@ -286,7 +290,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch (err) {
       console.warn('[Admin API] Verification queue fetch notice:', err);
     } finally {
-      setIsLoadingVerifications(false);
+      if (version === verificationRequestVersion.current) setIsLoadingVerifications(false);
     }
   }, [currentRole, selectedBarangay]);
 
@@ -342,7 +346,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch {
       if (dashboardGate.current.accepts(id, dashboardScope)) {
         setDashboardSource(null);
-        setDashboardFailure({ scope: dashboardScope, message: 'Could not load database statistics. Check your connection and retry.' });
+        setDashboardFailure({ scope: dashboardScope, message: 'Could not load dashboard statistics. Use Sync Real-Time to retry.' });
       }
     } finally {
       if (dashboardGate.current.accepts(id, dashboardScope)) setIsLoadingDashboardStats(false);
@@ -402,7 +406,13 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       refreshDashboardStats();
     }, 4000);
 
-    return () => clearInterval(interval);
+    const refreshOnFocus = () => { void refreshVerifications(); };
+    window.addEventListener('focus', refreshOnFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', refreshOnFocus);
+      verificationRequestVersion.current++;
+    };
   }, [isAuthenticated, refreshVerifications, refreshUsers, refreshDashboardStats, refreshDashboardActivity, refreshMonthlyTrend, refreshAuditLogs]);
 
   const login = async (
@@ -469,11 +479,16 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     purgeAdminStorage();
   };
 
+  const refreshReviewData = async () => {
+    await Promise.all([refreshVerifications(), refreshAuditLogs(), refreshUsers(), refreshDashboardStats(), refreshMonthlyTrend()]);
+    window.dispatchEvent(new Event('serbisure:verification_changed'));
+  };
+
   const reviewDocument = async (id: string, action: 'approve' | 'reject' | 'reset', reason?: string) => {
     const result = await reviewVerification(id, action, reason, currentUser?.email || currentUser?.username);
     // Only the selected document changes, after the server confirms its audit-backed decision.
     setVerifications(previous => previous.map(item => item.id === id ? { ...item, ...result.document } : item));
-    await Promise.all([refreshVerifications(), refreshAuditLogs()]);
+    await refreshReviewData();
   };
 
   const approveVerification = (id: string) => reviewDocument(id, 'approve');
@@ -522,6 +537,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         isLoadingDashboardStats,
         isLoadingDashboardActivity,
         refreshVerifications,
+        refreshReviewData,
         refreshUsers,
         refreshDashboardStats,
         refreshDashboardActivity,

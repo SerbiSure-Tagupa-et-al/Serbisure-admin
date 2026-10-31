@@ -4,6 +4,7 @@ import { useAdmin } from '../../context/AdminContext';
 import { IdentityComparisonModal } from './IdentityComparisonModal';
 import { getOptimizedWebpUrl } from '../../utils/imageOptimizer';
 import { groupVerificationApplicants } from '../../data/verificationApplicants';
+import { ReviewerCorrectionsForm } from './ReviewerCorrectionsForm';
 
 export const DocumentPreview: React.FC = () => {
   const { 
@@ -13,6 +14,7 @@ export const DocumentPreview: React.FC = () => {
     approveVerification, 
     rejectVerification, 
     resetVerification,
+    refreshReviewData,
     isComparisonModalOpen,
     setIsComparisonModalOpen
   } = useAdmin();
@@ -392,18 +394,18 @@ export const DocumentPreview: React.FC = () => {
 
   const docNumber = (idSide === 'back' && hasSecondary && selectedItem.secondaryDocumentNumber)
     ? selectedItem.secondaryDocumentNumber
-    : (activeOcrData?.clearance_number || activeOcrData?.philsys_number || activeOcrData?.document_number || selectedItem.documentNumber || 'Not Detected');
+    : (selectedItem.documentNumber || activeOcrData?.clearance_number || activeOcrData?.philsys_number || activeOcrData?.document_number || 'Not Detected');
   
   // PhilSys National IDs do not have an issuance date printed on the card
   const issuedDate = isNationalId 
     ? 'N/A (PhilSys National ID)' 
     : ((idSide === 'back' && hasSecondary && selectedItem.secondaryIssuedDate)
         ? selectedItem.secondaryIssuedDate
-        : (activeOcrData?.date_issued || selectedItem.issuedDate || 'Not Detected'));
+        : (selectedItem.issuedDate || activeOcrData?.date_issued || 'Not Detected'));
   
   const rawValidity = (idSide === 'back' && hasSecondary && selectedItem.secondaryValidityDate)
     ? selectedItem.secondaryValidityDate
-    : (activeOcrData?.valid_until || selectedItem.validityDate);
+    : (selectedItem.validUntil || selectedItem.validityDate || activeOcrData?.valid_until);
   const validityDate = isNationalId 
     ? 'Permanent' 
     : (rawValidity && rawValidity !== 'Not Detected' ? rawValidity : 'Not Detected');
@@ -615,7 +617,7 @@ export const DocumentPreview: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="min-w-0">
+              <div className="min-w-0">
                   <h4 className="text-base font-black font-display text-[#0D0D11] break-words">
                     {selectedItem.name}
                   </h4>
@@ -722,6 +724,11 @@ export const DocumentPreview: React.FC = () => {
                 <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider font-display">Validity</span>
                 <span className="font-medium text-zinc-700 text-xs">{formatOcrDate(validityDate)}</span>
               </div>
+              {selectedItem.isExpired && <p className="rounded-xl bg-orange-50 p-3 text-xs text-orange-900">
+                This clearance expired on {selectedItem.validityDate}. {selectedItem.status === 'REJECTED'
+                  ? 'The worker can upload a renewed clearance.'
+                  : 'Use Process expired clearances to notify the worker and allow renewal.'}
+              </p>}
               <div className="flex justify-between items-center py-0.5">
                 <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider font-display">Status</span>
                 <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider font-display ${
@@ -732,6 +739,8 @@ export const DocumentPreview: React.FC = () => {
                 </span>
               </div>
             </div>
+
+            <ReviewerCorrectionsForm key={selectedItem.id} documentId={selectedItem.id} onSaved={refreshReviewData} />
 
             {/* Discrepancies if any */}
             {selectedItem.ocrDiscrepancies && selectedItem.ocrDiscrepancies.length > 0 && (
