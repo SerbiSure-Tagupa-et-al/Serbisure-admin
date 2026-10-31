@@ -36,7 +36,9 @@ export function filterAccessUsers(users: AccountAccessUser[], search: string,
     (!query || `${user.name} ${user.barangay || ''}`.toLocaleLowerCase().includes(query)));
 }
 
-export function accessPage(users: AccountAccessUser[], requestedPage: number, pageSize = 10) {
+export const ACCOUNT_ACCESS_PAGE_SIZE = 5;
+
+export function accessPage(users: AccountAccessUser[], requestedPage: number, pageSize = ACCOUNT_ACCESS_PAGE_SIZE) {
   const totalPages = Math.max(1, Math.ceil(users.length / pageSize));
   const page = Math.max(1, Math.min(requestedPage, totalPages));
   return { page, totalPages, rows: users.slice((page - 1) * pageSize, page * pageSize) };

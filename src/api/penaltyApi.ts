@@ -1,6 +1,6 @@
 import { fetchApi } from './apiClient';
 import { parsePenaltyPage, parsePenaltyUser, parsePenaltyRecord, type PenaltyDraft, type PenaltyFilters, type PenaltyPage,
-  type PenaltyRecord, type PenaltyReview, type PenaltyUser } from '../data/penalties';
+  type PenaltyRecord, type PenaltyReview, type PenaltyUser, PENALTY_PAGE_SIZE } from '../data/penalties';
 
 const BASE = '/api/v1/accounts/admin/penalties';
 function query(filters: PenaltyFilters, page?: number): string {
@@ -9,7 +9,7 @@ function query(filters: PenaltyFilters, page?: number): string {
   if (filters.role) values.set('role', filters.role);
   if (filters.points) values.set('points', filters.points);
   if (filters.barangay && filters.barangay !== 'All Barangays') values.set('barangay', filters.barangay);
-  if (page) values.set('page', String(page));
+  if (page) { values.set('page', String(page)); values.set('page_size', String(PENALTY_PAGE_SIZE)); }
   return values.toString();
 }
 export async function fetchPenaltyUsers(filters: PenaltyFilters, page: number): Promise<PenaltyPage<PenaltyUser>> {

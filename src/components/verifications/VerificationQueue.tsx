@@ -120,7 +120,7 @@ export const VerificationQueue: React.FC = () => {
     });
 
   // Pagination State (10 items per page)
-  const ITEMS_PER_PAGE = 10;
+  const ITEMS_PER_PAGE = 5;
   const [currentPage, setCurrentPage] = useState<number>(1);
 
   // Total filtered records

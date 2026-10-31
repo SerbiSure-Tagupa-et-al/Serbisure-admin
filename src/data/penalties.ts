@@ -19,6 +19,7 @@ export interface PenaltyReview {
   user: PenaltyUser; cancellations: PenaltyPage<PenaltyCancellation>; recent_adjustments: PenaltyRecord[];
 }
 export interface PenaltyFilters { search: string; role: PenaltyRole; barangay: string; points?: PenaltyScoreFilter }
+export const PENALTY_PAGE_SIZE = 5;
 export interface PenaltyDraft {
   points_delta: number; reason: string; report_verified: boolean; incident_reference: string; booking_id?: string;
 }

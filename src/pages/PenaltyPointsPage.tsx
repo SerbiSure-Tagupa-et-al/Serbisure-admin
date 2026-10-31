@@ -3,7 +3,7 @@ import { Download, RotateCw, Search } from 'lucide-react';
 import { useAdmin } from '../context/AdminContext';
 import { usePenaltyRecords } from '../hooks/usePenaltyRecords';
 import { exportPenaltyHistory } from '../api/penaltyApi';
-import { penaltyError, type PenaltyFilters, type PenaltyRecord, type PenaltyRole, type PenaltyScoreFilter, type PenaltyUser } from '../data/penalties';
+import { penaltyError, PENALTY_PAGE_SIZE, type PenaltyFilters, type PenaltyRecord, type PenaltyRole, type PenaltyScoreFilter, type PenaltyUser } from '../data/penalties';
 import { PenaltyReviewDialog } from '../components/penalties/PenaltyReviewDialog';
 import { PenaltyHistoryList } from '../components/penalties/PenaltyHistoryList';
 
@@ -84,8 +84,8 @@ function PenaltyWorkspace({ barangay }: { barangay: string }): React.ReactElemen
           <button type="button" onClick={() => setSelected(user.id)} aria-label={`Review points for ${user.name}`} className="min-h-11 rounded-full bg-[#0D0D11] px-3 py-2 text-xs font-semibold text-white sm:px-4 sm:text-sm">Review</button>
         </li>)}</ul>}
         <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 p-4 sm:px-5">
-          <p className="text-xs text-zinc-500">Showing {(page - 1) * 10 + 1}–{Math.min(page * 10, count)} of {count}</p>
-          {count > 10 && <nav aria-label="Penalty pages" className="flex items-center gap-3 text-xs"><button type="button" className={`${button} bg-zinc-100 text-xs`} disabled={page === 1} onClick={() => setPage(value => value - 1)}>Previous</button><span>{page} / {Math.ceil(count / 10)}</span><button type="button" className={`${button} bg-zinc-100 text-xs`} disabled={page * 10 >= count} onClick={() => setPage(value => value + 1)}>Next</button></nav>}
+          <p className="text-xs text-zinc-500">Showing {(page - 1) * PENALTY_PAGE_SIZE + 1}–{Math.min(page * PENALTY_PAGE_SIZE, count)} of {count}</p>
+          {count > PENALTY_PAGE_SIZE && <nav aria-label="Penalty pages" className="flex items-center gap-3 text-xs"><button type="button" className={`${button} bg-zinc-100 text-xs`} disabled={page === 1} onClick={() => setPage(value => value - 1)}>Previous</button><span>{page} / {Math.ceil(count / PENALTY_PAGE_SIZE)}</span><button type="button" className={`${button} bg-zinc-100 text-xs`} disabled={page * PENALTY_PAGE_SIZE >= count} onClick={() => setPage(value => value + 1)}>Next</button></nav>}
         </footer>
       </>}
     </div>
