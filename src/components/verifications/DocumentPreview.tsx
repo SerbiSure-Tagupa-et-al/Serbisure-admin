@@ -5,6 +5,7 @@ import { IdentityComparisonModal } from './IdentityComparisonModal';
 import { getOptimizedWebpUrl } from '../../utils/imageOptimizer';
 import { groupVerificationApplicants } from '../../data/verificationApplicants';
 import { ReviewerCorrectionsForm } from './ReviewerCorrectionsForm';
+import { ProfilePhotoReview } from './ProfilePhotoReview';
 
 export const DocumentPreview: React.FC = () => {
   const { 
@@ -46,6 +47,11 @@ export const DocumentPreview: React.FC = () => {
   const isUnsubmitted = selectedItem.status === 'NO_DOCUMENTS' || selectedItem.hasDocuments === false;
   const applicantDocuments = groupVerificationApplicants(verifications).find(applicant =>
     applicant.user.id === selectedItem.id || applicant.documents.some(document => document.id === selectedItem.id))?.documents || [];
+
+  if (selectedItem.rawDocumentType === 'profile_photo') {
+    return <ProfilePhotoReview key={`${selectedItem.id}:${selectedItem.documentImage}`} photo={selectedItem} documents={applicantDocuments}
+      onSelect={setSelectedVerificationId} onApprove={approveVerification} onReject={rejectVerification} />;
+  }
 
   if (isUnsubmitted) {
     const isKasambahay = selectedItem.role === 'KASAMBAHAY';
@@ -483,6 +489,10 @@ export const DocumentPreview: React.FC = () => {
           </div>
 
           {/* Feedback Alert Toast */}
+          {applicantDocuments.some(doc => doc.rawDocumentType === 'profile_photo') && <nav className="flex flex-wrap gap-2 my-3" aria-label="Applicant documents">
+            {applicantDocuments.map(doc => <button key={doc.id} type="button" onClick={() => setSelectedVerificationId(doc.id)}
+              className="rounded-lg border px-3 py-2 text-sm" aria-current={doc.id === selectedItem.id ? 'true' : undefined}>{doc.documentType}</button>)}
+          </nav>}
           {feedbackMessage && (
             <div className="my-3 p-3 bg-emerald-50 text-emerald-800 text-xs font-bold rounded-2xl flex items-center gap-2">
               <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />

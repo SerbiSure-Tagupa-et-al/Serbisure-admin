@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
+const { create, act } = require('react-test-renderer');
 const loader = require('./source-loader.cjs');
 const { groupVerificationApplicants, applicantStatus, preferredDocument } = loader()('src/data/verificationApplicants.ts');
 
@@ -35,14 +36,16 @@ test('overall status is rejected if any document is rejected; one approval never
   assert.equal(applicantStatus([approved], 'HOMEOWNER'), 'PENDING / REVIEW');
   assert.equal(applicantStatus([approved, { ...back, status: 'REJECTED' }], 'HOMEOWNER'), 'REJECTED');
   assert.equal(applicantStatus([front, { ...back, status: 'REJECTED' }], 'HOMEOWNER'), 'REJECTED');
-  assert.equal(applicantStatus([approved, { ...back, status: 'VERIFIED' }], 'HOMEOWNER'), 'VERIFIED');
+  assert.equal(applicantStatus([approved, { ...back, status: 'VERIFIED' }], 'HOMEOWNER'), 'PENDING / REVIEW');
+  assert.equal(applicantStatus([approved, { ...back, status: 'VERIFIED' }, document('photo', 'owner', 'profile_photo', 'VERIFIED')], 'HOMEOWNER'), 'VERIFIED');
   assert.equal(applicantStatus([], 'HOMEOWNER'), 'NO_DOCUMENTS');
 });
 
 test('workers require both NBI and Police clearances; wrong or duplicate types do not satisfy the requirement', () => {
   const nbi = document('nbi', 'worker', 'nbi_clearance', 'VERIFIED', { role: 'KASAMBAHAY' });
   const police = document('police', 'worker', 'police_clearance', 'VERIFIED', { role: 'KASAMBAHAY' });
-  assert.equal(applicantStatus([nbi, police], 'KASAMBAHAY'), 'VERIFIED');
+  assert.equal(applicantStatus([nbi, police], 'KASAMBAHAY'), 'PENDING / REVIEW');
+  assert.equal(applicantStatus([nbi, police, document('photo', 'worker', 'profile_photo', 'VERIFIED')], 'KASAMBAHAY'), 'VERIFIED');
   assert.equal(applicantStatus([nbi, { ...nbi, id: 'duplicate' }], 'KASAMBAHAY'), 'PENDING / REVIEW');
   assert.equal(applicantStatus([front, back], 'KASAMBAHAY'), 'PENDING / REVIEW');
 });
@@ -119,4 +122,57 @@ test('applicants with no documents can be inspected without review actions', () 
   assert.doesNotMatch(html, />Approve document<|>Reject document<|>Re-open document</);
   assert.match(html, /role="dialog" aria-modal="true"/);
   assert.match(html, /Close applicant review/);
+});
+
+async function photoReview(t, { fail = false } = {}) {
+  const calls = [];
+  const { ProfilePhotoReview } = loader()('src/components/verifications/ProfilePhotoReview.tsx');
+  let view;
+  await act(async () => { view = create(React.createElement(ProfilePhotoReview, {
+    photo: document('face', 'owner', 'profile_photo', 'PENDING / REVIEW', { documentImage: '/face.jpg' }),
+    documents: [front, back, document('face', 'owner', 'profile_photo')], onSelect: id => calls.push(['select', id]),
+    onApprove: async id => { calls.push(['approve', id]); if (fail) throw Error('Please try again.'); },
+    onReject: async (id, reason) => calls.push(['reject', id, reason]),
+  })); });
+  t.after(() => act(() => view.unmount()));
+  const button = text => view.root.findAllByType('button').find(node => node.children.includes(text));
+  const click = async text => act(async () => { button(text).props.onClick(); });
+  return { view, calls, button, click };
+}
+
+test('photo review blocks approval until the image loads and keeps ID selection available', async t => {
+  const f = await photoReview(t);
+  assert.equal(f.button('Approve Photo').props.disabled, true);
+  await f.click('national id front');
+  assert.deepEqual(f.calls, [['select', 'front']]);
+  act(() => f.view.root.findByType('img').props.onLoad());
+  await f.click('Approve Photo');
+  assert.deepEqual(f.calls[1], ['approve', 'face']);
+  assert.match(JSON.stringify(f.view.toJSON()), /Profile photo approved/);
+});
+
+test('photo rejection requires a reason and confirmation, without changing the other documents', async t => {
+  const f = await photoReview(t);
+  act(() => f.view.root.findByType('img').props.onLoad());
+  await f.click('Reject Photo');
+  assert.match(JSON.stringify(f.view.toJSON()), /Please explain/);
+  assert.equal(f.calls.length, 0);
+  act(() => f.view.root.findByType('textarea').props.onChange({ target: { value: '  Face is too dark.  ' } }));
+  await f.click('Reject Photo');
+  assert.equal(f.calls.length, 0);
+  await f.click('Keep reviewing');
+  assert.equal(f.calls.length, 0);
+  await f.click('Reject Photo');
+  await f.click('Confirm rejection');
+  assert.deepEqual(f.calls, [['reject', 'face', 'Face is too dark.']]);
+});
+
+test('failed review and broken images never claim approval', async t => {
+  const f = await photoReview(t, { fail: true });
+  act(() => f.view.root.findByType('img').props.onLoad());
+  await f.click('Approve Photo');
+  assert.match(JSON.stringify(f.view.toJSON()), /Please try again/);
+  assert.doesNotMatch(JSON.stringify(f.view.toJSON()), /Profile photo approved/);
+  act(() => f.view.root.findByType('img').props.onError());
+  assert.equal(f.button('Approve Photo').props.disabled, true);
 });
