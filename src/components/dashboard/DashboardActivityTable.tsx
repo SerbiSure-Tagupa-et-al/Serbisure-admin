@@ -80,6 +80,7 @@ function formatAuditDate(dateStr?: string | null): string {
 
 function formatDocType(type?: string | null): string {
   if (!type) return 'Document';
+  if (type === 'profile_photo') return 'Profile Photo';
   const t = type.toLowerCase().trim();
   if (
     t === 'national_id_front' || 

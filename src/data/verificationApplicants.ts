@@ -16,6 +16,7 @@ function documentKind(document: VerificationRequest): string {
   if (label.includes('national') && label.includes('back')) return 'national_id_back';
   if (label.includes('nbi')) return 'nbi_clearance';
   if (label.includes('police')) return 'police_clearance';
+  if (label.includes('profile photo')) return 'profile_photo';
   return label;
 }
 
@@ -25,8 +26,8 @@ export function applicantStatus(documents: VerificationRequest[], role: string):
   if (documents.some(document => document.status !== 'VERIFIED')) return 'PENDING / REVIEW';
   const types = new Set(documents.map(documentKind));
   const required = role === 'KASAMBAHAY'
-    ? ['nbi_clearance', 'police_clearance']
-    : ['national_id_front', 'national_id_back'];
+    ? ['nbi_clearance', 'police_clearance', 'profile_photo']
+    : ['national_id_front', 'national_id_back', 'profile_photo'];
   return required.every(type => types.has(type)) ? 'VERIFIED' : 'PENDING / REVIEW';
 }
 
