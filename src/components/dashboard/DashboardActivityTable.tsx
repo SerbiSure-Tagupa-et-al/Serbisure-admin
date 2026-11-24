@@ -110,6 +110,7 @@ function formatDocType(type?: string | null): string {
   }
   if (t === 'nbi_clearance' || t.includes('nbi')) return 'NBI Clearance';
   if (t === 'police_clearance' || t.includes('police')) return 'Police Clearance';
+  if (t === 'tesda_nc2' || t.includes('tesda')) return 'TESDA NC II';
   if (t.includes('national_id') || t === 'national id') return 'National ID';
   return type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 }

@@ -41,11 +41,21 @@ test('overall status is rejected if any document is rejected; one approval never
   assert.equal(applicantStatus([], 'HOMEOWNER'), 'NO_DOCUMENTS');
 });
 
-test('workers require both NBI and Police clearances; wrong or duplicate types do not satisfy the requirement', () => {
+test('workers require NBI, Police, skill certification and photo; old approvals alone remain pending', () => {
   const nbi = document('nbi', 'worker', 'nbi_clearance', 'VERIFIED', { role: 'KASAMBAHAY' });
   const police = document('police', 'worker', 'police_clearance', 'VERIFIED', { role: 'KASAMBAHAY' });
   assert.equal(applicantStatus([nbi, police], 'KASAMBAHAY'), 'PENDING / REVIEW');
-  assert.equal(applicantStatus([nbi, police, document('photo', 'worker', 'profile_photo', 'VERIFIED')], 'KASAMBAHAY'), 'VERIFIED');
+  const photo = document('photo', 'worker', 'profile_photo', 'VERIFIED');
+  const tesda = document('tesda', 'worker', 'tesda_nc2', 'VERIFIED');
+  assert.equal(applicantStatus([nbi, police, photo], 'KASAMBAHAY'), 'PENDING / REVIEW');
+  assert.equal(applicantStatus([nbi, police, photo, tesda], 'KASAMBAHAY'), 'VERIFIED');
+  const [applicant] = groupVerificationApplicants([photo, tesda, police, nbi]);
+  assert.deepEqual(applicant.documents.map(item => item.id), ['nbi', 'police', 'tesda', 'photo']);
+  assert.equal(applicant.documents.length, 4);
+  for (const documentType of ['TESDA NC II / Skill Certification', 'NC II', 'Skill Certification']) {
+    const legacy = { ...tesda, rawDocumentType: undefined, documentType };
+    assert.equal(applicantStatus([nbi, police, photo, legacy], 'KASAMBAHAY'), 'VERIFIED');
+  }
   assert.equal(applicantStatus([nbi, { ...nbi, id: 'duplicate' }], 'KASAMBAHAY'), 'PENDING / REVIEW');
   assert.equal(applicantStatus([front, back], 'KASAMBAHAY'), 'PENDING / REVIEW');
 });

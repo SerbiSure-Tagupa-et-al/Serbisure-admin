@@ -100,6 +100,85 @@ test('permanent National IDs do not offer clearance issue or expiry dates', asyn
   assert.equal(labels.includes('Document expiry date'), false);
 });
 
+test('TESDA editor omits only document birthdate and still saves certificate corrections', async t => {
+  const f = await form(t, { kind: 'tesda_nc2' });
+  const labels = f.view.root.findAllByType('input').map(input => input.props['aria-label']);
+  assert.ok(labels.includes('Account birthdate'));
+  assert.equal(labels.includes('Document birthdate'), false);
+  for (const label of ['first name', 'middle name', 'last name', 'issue date', 'expiry date']) {
+    assert.ok(labels.includes(`Document ${label}`));
+  }
+  f.change('Document document number', '21140302025983');
+  await f.save();
+  assert.deepEqual(f.calls[1][2], { version: snapshot().version, document: { document_number: '21140302025983' } });
+});
+
+test('TESDA preview compares names only and uses certificate number and RWAC portal for both reviewers', () => {
+  const doc = {
+    id: 'tesda-doc', userId: 'worker', name: 'Maria Clara Dela Cruz', role: 'KASAMBAHAY',
+    barangay: 'Agusan', documentType: 'TESDA NC II', rawDocumentType: 'tesda_nc2',
+    status: 'PENDING / REVIEW', recordStatus: 'Flagged', documentImage: '',
+    accountRegistration: { first_name: 'Maria Clara', middle_name: 'Santos', last_name: 'Dela Cruz',
+      date_of_birth: '1990-01-01', address: 'Account address' },
+    ocrExtractedData: { first_name: 'MARIA CLARA', middle_name: 'S', last_name: 'DELA CRUZ',
+      certificate_number: '21140302025983', date_issued: '2018-09-20', valid_until: '2023-09-19' },
+    ocrDiscrepancies: [{ field: 'valid_until', message: 'Document is EXPIRED' }],
+  };
+  const state = { verifications: [doc], selectedVerificationId: doc.id, isComparisonModalOpen: false };
+  const { DocumentPreview } = loader({ 'src/context/AdminContext.tsx': { useAdmin: () => state } })('src/components/verifications/DocumentPreview.tsx');
+  for (const role of ['ADMIN', 'SUPERADMIN']) {
+    state.currentRole = role;
+    for (const [raw, label] of [['tesda_nc2', 'TESDA NC II'], ['tesda_nc2', ''],
+      ['', 'TESDA Certificate'], ['', 'NC II Certificate'], ['', 'Equivalent Skill Certification']]) {
+      doc.rawDocumentType = raw;
+      doc.documentType = label;
+      const html = renderToStaticMarkup(React.createElement(DocumentPreview));
+      const fields = html.match(/<tbody[^>]*>.*?<\/tbody>/g);
+      assert.equal(fields.length, 3);
+      assert.match(fields[0], /First Name.*MARIA CLARA.*Maria Clara/);
+      assert.match(fields[1], /Middle Name.*S.*Santos/);
+      assert.match(fields[2], /Last Name.*DELA CRUZ.*Dela Cruz/);
+      assert.doesNotMatch(fields.join(''), /Birthdate|Address/);
+      assert.match(html, /ID Type.*(?:TESDA|NC II|Skill Certification)/);
+      assert.doesNotMatch(html, /NBI Clearance/);
+      assert.match(html, /Certificate Number.*21140302025983.*Copy to clipboard/);
+      assert.match(html, /href="https:\/\/www.tesda.gov.ph\/RWAC".*title="Open official TESDA RWAC verification portal"/);
+      assert.match(html, /Verify on TESDA Portal/);
+      assert.match(html, /Date Issued.*Sep 20, 2018.*Validity.*Sep 19, 2023/);
+      assert.match(html, /Flagged Discrepancies \(1\).*Document is EXPIRED/);
+    }
+  }
+});
+
+test('non-TESDA clearances keep five comparison rows and their existing portal and number labels', () => {
+  const doc = { id: 'clearance', userId: 'worker', name: 'Worker', role: 'KASAMBAHAY',
+    status: 'PENDING / REVIEW', documentImage: '', ocrExtractedData: {} };
+  const state = { verifications: [doc], selectedVerificationId: doc.id, isComparisonModalOpen: false };
+  const { DocumentPreview } = loader({ 'src/context/AdminContext.tsx': { useAdmin: () => state } })('src/components/verifications/DocumentPreview.tsx');
+  for (const [kind, label, number, portal] of [
+    ['nbi_clearance', 'NBI Clearance', 'Transaction Number', 'https://verification.nbi-clearance.io'],
+    ['police_clearance', 'Police Clearance', 'ID Number', 'https://pnpclearance.ph/#call-to-action'],
+  ]) {
+    doc.rawDocumentType = kind;
+    doc.documentType = label;
+    const html = renderToStaticMarkup(React.createElement(DocumentPreview));
+    assert.equal((html.match(/<tbody/g) || []).length, 5);
+    assert.ok(html.includes(`href="${portal}"`));
+    assert.ok(html.includes(number));
+    assert.doesNotMatch(html, /Certificate Number|Verify on TESDA Portal/);
+  }
+});
+
+test('no-documents worker checklist includes TESDA after NBI and Police Clearance', () => {
+  const doc = { id: 'worker', userId: 'worker', name: 'Worker', role: 'KASAMBAHAY',
+    status: 'NO_DOCUMENTS', hasDocuments: false };
+  const state = { verifications: [doc], selectedVerificationId: doc.id, isComparisonModalOpen: false };
+  const { DocumentPreview } = loader({ 'src/context/AdminContext.tsx': { useAdmin: () => state } })('src/components/verifications/DocumentPreview.tsx');
+  const html = renderToStaticMarkup(React.createElement(DocumentPreview));
+  assert.match(html, /Required Submission Checklist.*NBI Clearance.*National Police Clearance.*TESDA NC II/);
+  assert.equal((html.match(/Pending Upload/g) || []).length, 3);
+});
+
 test('audit changes show clear before/after values and escape supplied text', () => {
   const { AuditCorrectionDetails } = loader()('src/components/dashboard/AuditCorrectionDetails.tsx');
   const metadata = { reason_code: 'reviewer_correction', changes: [

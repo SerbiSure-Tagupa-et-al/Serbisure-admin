@@ -236,6 +236,20 @@ export const DocumentPreview: React.FC = () => {
                       Pending Upload
                     </span>
                   </div>
+                  <div className="p-3.5 rounded-2xl bg-white border border-zinc-200 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-7 h-7 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-400">
+                        <FileText className="w-3.5 h-3.5" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-zinc-900">TESDA NC II</div>
+                        <div className="text-[10px] text-zinc-400 font-medium">TESDA National Certificate II</div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
+                      Pending Upload
+                    </span>
+                  </div>
                 </>
               ) : (
                 <>
@@ -393,9 +407,14 @@ export const DocumentPreview: React.FC = () => {
 
   const isHomeowner = selectedItem.role?.toUpperCase() === 'HOMEOWNER';
   const baseDocTypeLower = (selectedItem.documentType || '').toLowerCase();
+  const rawTypeLower = (selectedItem.rawDocumentType || '').toLowerCase();
+  const isTesda = rawTypeLower === 'tesda_nc2'
+    || baseDocTypeLower.includes('tesda')
+    || baseDocTypeLower.includes('nc ii')
+    || baseDocTypeLower.includes('skill certification');
   const packageLabelLower = (selectedItem.packageLabel || '').toLowerCase();
   const isNationalId = isHomeowner || baseDocTypeLower.includes('national id') || packageLabelLower.includes('national id') || (selectedItem.rawDocumentType || '').toLowerCase().includes('national_id');
-  const isKasambahayPackage = !isNationalId && (
+  const isKasambahayPackage = !isNationalId && !isTesda && (
     selectedItem.role?.toUpperCase() === 'KASAMBAHAY' ||
     baseDocTypeLower.includes('clearance') ||
     packageLabelLower.includes('clearance') ||
@@ -424,7 +443,7 @@ export const DocumentPreview: React.FC = () => {
 
   const docNumber = (idSide === 'back' && hasSecondary && selectedItem.secondaryDocumentNumber)
     ? selectedItem.secondaryDocumentNumber
-    : (selectedItem.documentNumber || activeOcrData?.clearance_number || activeOcrData?.philsys_number || activeOcrData?.document_number || 'Not Detected');
+    : (selectedItem.documentNumber || activeOcrData?.clearance_number || activeOcrData?.philsys_number || activeOcrData?.certificate_number || activeOcrData?.document_number || 'Not Detected');
   
   // PhilSys National IDs do not have an issuance date printed on the card
   const issuedDate = isNationalId 
@@ -440,7 +459,9 @@ export const DocumentPreview: React.FC = () => {
     ? 'Permanent' 
     : (rawValidity && rawValidity !== 'Not Detected' ? rawValidity : 'Not Detected');
 
-  const resolvedIdType = (idSide === 'back' && hasSecondary)
+  const resolvedIdType = isTesda
+    ? (selectedItem.documentType || 'TESDA NC II')
+    : (idSide === 'back' && hasSecondary)
     ? (selectedItem.secondaryDocumentType || (isKasambahayPackage ? 'Police Clearance' : 'National ID (Back)'))
     : (isKasambahayPackage ? 'NBI Clearance' : (hasSecondary ? 'National ID (Front)' : (selectedItem.documentType || 'Government ID')));
 
@@ -466,7 +487,7 @@ export const DocumentPreview: React.FC = () => {
   const docTypeLower = (selectedItem.documentType || selectedItem.rawDocumentType || resolvedIdType || '').toLowerCase();
   const isNbi = docTypeLower.includes('nbi');
   const isPolice = docTypeLower.includes('police') || docTypeLower.includes('pnp');
-  const numberLabel = isNbi ? 'Transaction Number' : 'ID Number';
+  const numberLabel = isTesda ? 'Certificate Number' : isNbi ? 'Transaction Number' : 'ID Number';
 
   const handleCopyNumber = () => {
     if (docNumber && docNumber !== 'Not Detected') {
@@ -704,7 +725,7 @@ export const DocumentPreview: React.FC = () => {
                     <th scope="col" className="border-l border-zinc-200 px-3 py-2 font-bold">Account Registration</th>
                   </tr>
                 </thead>
-                {comparisonFields.map(({ key, label }) => {
+                {comparisonFields.filter(({ key }) => !isTesda || (key !== 'date_of_birth' && key !== 'address')).map(({ key, label }) => {
                   const formatValue = key === 'date_of_birth' ? formatBirthdate : (value: string) => value;
                   const ocrValue = formatValue(readComparisonValue(activeOcrData[key]));
                   const accountValue = formatValue(readComparisonValue(registration?.[key]));
@@ -764,11 +785,13 @@ export const DocumentPreview: React.FC = () => {
                 </div>
 
                 {/* Direct External Verification Portal Link */}
-                {(isNbi || isPolice || isNationalId) && (
+                {(isTesda || isNbi || isPolice || isNationalId) && (
                   <div className="flex justify-end pt-1 pb-0.5">
                     <a
                       href={
-                        isNationalId
+                        isTesda
+                          ? "https://www.tesda.gov.ph/RWAC"
+                          : isNationalId
                           ? "https://everify.gov.ph/check"
                           : isNbi
                           ? "https://verification.nbi-clearance.io"
@@ -777,10 +800,10 @@ export const DocumentPreview: React.FC = () => {
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#FFF4ED] hover:bg-[#FFE5D6] text-[#FFB380] hover:text-[#F5A066] rounded-full text-[11px] font-black font-display transition-all cursor-pointer border-0"
-                      title={`Open official ${isNationalId ? 'PhilSys National ID (eVerify)' : isNbi ? 'NBI' : 'PNP'} verification portal`}
+                      title={isTesda ? 'Open official TESDA RWAC verification portal' : `Open official ${isNationalId ? 'PhilSys National ID (eVerify)' : isNbi ? 'NBI' : 'PNP'} verification portal`}
                     >
                       <span>
-                        Verify on {isNationalId ? 'PhilSys eVerify' : isNbi ? 'NBI Portal' : 'PNP Portal'}
+                        Verify on {isTesda ? 'TESDA Portal' : isNationalId ? 'PhilSys eVerify' : isNbi ? 'NBI Portal' : 'PNP Portal'}
                       </span>
                       <ExternalLink className="w-3 h-3" />
                     </a>
