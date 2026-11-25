@@ -67,7 +67,8 @@ export const ReviewerCorrectionsForm: React.FC<{ documentId: string; onSaved: ()
       <fieldset disabled={busy} className="mt-4 min-w-0">
         <legend className="mb-2 text-sm font-semibold text-zinc-900">Document details</legend>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {IDENTITY_FIELDS.map(([key, label]) => field('document', key, label))}
+          {IDENTITY_FIELDS.filter(([key]) => draft?.document_type !== 'tesda_nc2' || key !== 'date_of_birth')
+            .map(([key, label]) => field('document', key, label))}
           {field('document', 'document_number', 'Document number')}
           {!draft?.document_type.startsWith('national_id') && <>
             {field('document', 'date_issued', 'Issue date')}

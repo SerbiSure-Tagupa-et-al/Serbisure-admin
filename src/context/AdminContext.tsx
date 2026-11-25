@@ -73,7 +73,7 @@ interface AdminContextType {
 
   // Actions
   addBarangay: (barangay: BarangayStats) => Promise<{ success: boolean; error?: string }>;
-  approveVerification: (id: string) => Promise<void>;
+  approveVerification: (id: string, overrideOptions?: { overrideWarning: boolean; overrideReason: string }) => Promise<void>;
   rejectVerification: (id: string, reason?: string) => Promise<void>;
   resetVerification: (id: string) => Promise<void>;
 
@@ -484,14 +484,20 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     window.dispatchEvent(new Event('serbisure:verification_changed'));
   };
 
-  const reviewDocument = async (id: string, action: 'approve' | 'reject' | 'reset', reason?: string) => {
-    const result = await reviewVerification(id, action, reason, currentUser?.email || currentUser?.username);
+  const reviewDocument = async (
+    id: string,
+    action: 'approve' | 'reject' | 'reset',
+    reason?: string,
+    overrideOptions?: { overrideWarning?: boolean; overrideReason?: string },
+  ) => {
+    const result = await reviewVerification(id, action, reason, currentUser?.email || currentUser?.username, overrideOptions);
     // Only the selected document changes, after the server confirms its audit-backed decision.
     setVerifications(previous => previous.map(item => item.id === id ? { ...item, ...result.document } : item));
     await refreshReviewData();
   };
 
-  const approveVerification = (id: string) => reviewDocument(id, 'approve');
+  const approveVerification = (id: string, overrideOptions?: { overrideWarning: boolean; overrideReason: string }) =>
+    reviewDocument(id, 'approve', undefined, overrideOptions);
   const rejectVerification = (id: string, reason?: string) => reviewDocument(id, 'reject', reason);
   const resetVerification = (id: string) => reviewDocument(id, 'reset');
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileText, Loader2 } from 'lucide-react';
+import { AlertTriangle, FileText, Loader2 } from 'lucide-react';
 import type { VerificationRequest } from '../../types/admin';
 import { getOptimizedWebpUrl } from '../../utils/imageOptimizer';
 import { VerificationStatusBadge } from './VerificationStatusBadge';
@@ -15,23 +15,24 @@ interface Props {
 
 export const VerificationDocumentRow: React.FC<Props> = ({ document, selected, onReview, onApprove, onReject, onReset }) => {
   const [rejecting, setRejecting] = useState(false);
-  const [reason, setReason] = useState('');
+  const [reason, setReason] = useState(document.screening?.suggested_rejection_reason || '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const hasBlockingFlag = Boolean(document.screening?.has_blocking_flag) && document.status !== 'VERIFIED';
   const decide = async (action: 'approve' | 'reject' | 'reset') => {
     if (busy) return;
     setBusy(true); setError(null);
     try {
       if (action === 'approve') await onApprove(document.id);
       else if (action === 'reset') await onReset(document.id);
-      else await onReject(document.id, reason.trim() || 'Document criteria not met');
+      else await onReject(document.id, reason.trim() || document.screening?.suggested_rejection_reason || 'Document criteria not met');
       setRejecting(false); setReason('');
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Could not save this review. Please try again.');
     } finally { setBusy(false); }
   };
   return (
-    <div className={`verification-document-card rounded-xl border p-3 ${selected ? 'border-orange-200 bg-orange-50/40' : 'border-zinc-200/70 bg-white'}`}>
+    <div className={`verification-document-card rounded-xl border p-3 ${selected ? 'border-orange-200 bg-orange-50/40' : hasBlockingFlag ? 'border-rose-200 bg-rose-50/30' : 'border-zinc-200/70 bg-white'}`}>
       <div className="flex flex-wrap items-center gap-3">
         <button type="button" onClick={onReview} aria-label={`Review ${document.documentType}`} className="flex min-w-0 flex-1 items-center gap-3 text-left cursor-pointer rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-200">
           <span className="flex h-12 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-zinc-100">
@@ -49,14 +50,26 @@ export const VerificationDocumentRow: React.FC<Props> = ({ document, selected, o
             <button type="button" disabled={busy} onClick={() => void decide('reset')} className="rounded-full bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-700 disabled:opacity-50 cursor-pointer">Re-open</button>
           ) : (
             <>
-              {document.status !== 'REJECTED' && <button type="button" disabled={busy} onClick={() => { setRejecting(value => !value); setError(null); }} className="rounded-full bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-50 cursor-pointer">Reject</button>}
-              <button type="button" disabled={busy} onClick={() => void decide('approve')} className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50 cursor-pointer">
-                {busy && <Loader2 className="h-3 w-3 animate-spin" />} Approve
-              </button>
+              {document.status !== 'REJECTED' && <button type="button" disabled={busy} onClick={() => { setReason(document.screening?.suggested_rejection_reason || ''); setRejecting(value => !value); setError(null); }} className="rounded-full bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-50 cursor-pointer">Reject</button>}
+              {hasBlockingFlag ? (
+                <button type="button" onClick={onReview} className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-3 py-2 text-xs font-semibold text-white cursor-pointer" title="Open preview to inspect warning before approving">
+                  <AlertTriangle className="h-3 w-3" /> Flagged · Review
+                </button>
+              ) : (
+                <button type="button" disabled={busy} onClick={() => void decide('approve')} className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50 cursor-pointer">
+                  {busy && <Loader2 className="h-3 w-3 animate-spin" />} Approve
+                </button>
+              )}
             </>
           )}
         </div>
       </div>
+      {hasBlockingFlag && document.screening?.blocking_reasons?.[0] && (
+        <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-rose-700">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-rose-600" />
+          <span>{document.screening.blocking_reasons[0]}</span>
+        </p>
+      )}
       {document.isExpired && <p className="mt-2 text-xs text-orange-800">Expired on {document.validityDate}. {document.status === 'REJECTED' ? 'Renewal requested.' : 'Process expirations to request a renewed clearance.'}</p>}
       {document.status === 'REJECTED' && document.notes && <p className="mt-2 text-xs text-rose-700 break-words">{document.notes}</p>}
       {rejecting && (

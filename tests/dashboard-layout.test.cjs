@@ -3,9 +3,9 @@ const assert = require('node:assert/strict');
 const React = require('react');
 const { create, act } = require('react-test-renderer');
 const loader = require('./source-loader.cjs');
-const text = node => typeof node === 'string' ? node : node.children.map(text).join('');
+const text = node => typeof node === 'string' ? node : (node.children || []).map(text).join('');
 
-function activity(t, role) {
+function activity(t, role, customBookings) {
   const exported = {};
   const state = {
     currentRole: role, selectedBarangay: 'Agusan', setActiveNav() {}, isLoadingDashboardActivity: false, isLoadingAuditLogs: false,
@@ -18,6 +18,7 @@ function activity(t, role) {
     verifications: [{ id: 'doc', name: 'Document Applicant', role: 'KASAMBAHAY', documentType: 'Police Clearance', barangay: 'Agusan', submittedDate: 'Oct 20, 2026', status: 'VERIFIED', avatar: '' }],
     auditLogs: [{ log_id: 'log', actor_name: 'Reviewing Officer', actor_role: 'ADMIN', actor_barangay: 'Agusan', target_name: 'Document Applicant', target_barangay: 'Agusan', action: 'APPROVED', document_type: 'police_clearance', previous_status: 'PENDING', new_status: 'VERIFIED', created_at: '2026-10-20T08:00:00Z', reason: 'Reviewed submitted document' }],
   };
+  if (customBookings) state.bookings = customBookings;
   const { DashboardActivityTable } = loader({
     'src/context/AdminContext.tsx': { useAdmin: () => state },
     jspdf: class {
@@ -43,6 +44,27 @@ function activity(t, role) {
   };
 }
 
+for (const role of ['ADMIN', 'SUPERADMIN']) test(`${role} availability rows hide legacy rates in the table and PDF`, async t => {
+  const rows = [
+    { id: 'legacy', homeownerName: 'Unassigned', workerName: 'Available Worker', offeredWage: 608, ratePeriod: 'day', contractType: 'Short-Term On-Demand', barangay: 'Agusan' },
+    { id: 'null', homeownerName: 'Unassigned', workerName: 'New Worker', offeredWage: null, ratePeriod: 'month', contractType: 'Formal Kasambahay (Long-Term)', barangay: 'Agusan' },
+    { id: 'budget', homeownerName: 'Employer', workerName: 'Unassigned', offeredWage: 650, ratePeriod: 'day', contractType: 'Short-Term On-Demand', barangay: 'Agusan' },
+    { id: 'hired', homeownerName: 'Employer', workerName: 'Hired Worker', offeredWage: 8500, ratePeriod: 'month', contractType: 'Formal Kasambahay (Long-Term)', barangay: 'Agusan' },
+  ];
+  const f = activity(t, role, rows);
+  const pay = row => text(row.findAllByType('td').find(cell => cell.props['data-label'] === 'Pay'));
+  assert.equal(pay(f.rows()[0]), '-'); assert.equal(pay(f.rows()[1]), '-');
+  assert.equal(pay(f.rows()[2]), '₱650.00 / day'); assert.equal(pay(f.rows()[3]), '₱8,500.00 / month');
+  assert.match(text(f.view.toJSON()), /Wage \/ Rate/);
+  await f.exportPdf();
+  const pdfRows = f.exported.html.match(/<tbody>[\s\S]*?<\/tbody>/)[0].match(/<tr>[\s\S]*?<\/tr>/g);
+  assert.doesNotMatch(pdfRows[0], /608|Wage Compliant|Below RA|\/ day/);
+  assert.doesNotMatch(pdfRows[1], /Wage Compliant|Below RA|\/ month/);
+  assert.match(pdfRows[2], /₱650.00 \/ day/); assert.match(pdfRows[3], /₱8,500.00 \/ month/);
+  assert.match(f.exported.html, /Wage \/ Rate/);
+  assert.equal(rows[0].offeredWage, 608);
+});
+
 for (const role of ['ADMIN', 'SUPERADMIN']) test(`responsive activity records preserve ${role} scope, pagination, search, pay and status`, t => {
   const f = activity(t, role);
   assert.equal(f.rows().length, 5);
@@ -51,7 +73,7 @@ for (const role of ['ADMIN', 'SUPERADMIN']) test(`responsive activity records pr
   assert.equal(text(f.rows()[1].findByProps({ 'data-label': 'Date Posted' })), '—');
   f.click('Next placements page');
   assert.equal(f.rows().length, role === 'ADMIN' ? 1 : 2);
-  assert.match(text(f.rows()[0]), /Homeowner 6.*Worker 6.*600 \/ month.*Formal Kasambahay.*Accepted/);
+  assert.match(text(f.rows()[0]), /Homeowner 6.*Worker 6.*600\.00 \/ month.*Full-time \/ Monthly.*Accepted/);
   f.search('Worker 1');
   assert.equal(f.rows().length, 1);
   assert.match(text(f.rows()[0]), /Worker 1/);

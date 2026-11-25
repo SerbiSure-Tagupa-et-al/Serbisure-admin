@@ -121,18 +121,18 @@ export const LogisticsOverview: React.FC = () => {
 
                   {/* Wage & Baseline */}
                   <td className="py-3.5 px-3">
-                    <div>
-                      <span className="font-black font-display text-[#0D0D11]">
-                        ₱{b.offeredWage.toLocaleString()}
-                      </span>
-                      <span className="text-zinc-400 text-[10px] font-medium">
-                        {' '}/ {b.ratePeriod || (b.contractType.includes('Long-Term') ? 'month' : 'day')}
-                      </span>
-                    </div>
-                    <div className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
-                      <CheckCircle2 className="w-3 h-3" />
-                      <span>{b.rateNeedsReview ? 'Rate requires review' : b.isBelowMinimumWage ? 'Below applicable minimum' : 'Meets applicable rate minimum'}</span>
-                    </div>
+                    {b.homeownerName === 'Unassigned' || b.offeredWage == null || b.offeredWage <= 0 ? (
+                      <span className="text-zinc-400">-</span>
+                    ) : <>
+                      <div className="font-black font-display text-[#0D0D11]">
+                        ₱{b.offeredWage.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <span className="text-zinc-400 text-[10px] font-medium"> / {b.ratePeriod || (b.contractType.includes('Long-Term') ? 'month' : 'day')}</span>
+                      </div>
+                      <div className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" />
+                        <span>{b.rateNeedsReview ? 'Rate requires review' : b.isBelowMinimumWage ? 'Below applicable minimum' : 'Meets applicable rate minimum'}</span>
+                      </div>
+                    </>}
                   </td>
 
                   {/* Statutory Benefits */}
