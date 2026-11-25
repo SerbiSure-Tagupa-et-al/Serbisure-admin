@@ -60,6 +60,7 @@ export const IdentityComparisonContent: React.FC<IdentityComparisonModalProps> =
   const documentStatus = useCallback((status: ReviewImageStatus) => setDocumentState({ key: documentKey, status }), [documentKey]);
   const imagesReady = photoState.key === avatarUrl && photoState.status === 'ready'
     && documentState.key === documentKey && documentState.status === 'ready';
+  const hasBlockingFlag = Boolean(selectedDocument.screening?.has_blocking_flag) && currentStatus !== 'VERIFIED';
   const activeFeedback = feedback?.id === activeId ? feedback : null;
   const close = useCallback(() => { if (!saving.current) onClose(); }, [onClose]);
 
@@ -155,13 +156,14 @@ export const IdentityComparisonContent: React.FC<IdentityComparisonModalProps> =
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-semibold text-zinc-800">{selectedDocument.documentType}</span><VerificationStatusBadge status={currentStatus} /></div>
               {!noDocuments && !imagesReady && currentStatus !== 'VERIFIED' && <p className="mt-1 text-[11px] text-zinc-500">Both images must load before approving.</p>}
+              {hasBlockingFlag && <p className="mt-1 text-[11px] font-semibold text-rose-700">Automated screening warning active — reject here or close to review &amp; override in Document Preview.</p>}
               {busy && <p role="status" className="mt-1 inline-flex items-center gap-2 text-xs text-zinc-500"><Loader2 className="h-3 w-3 animate-spin" />Saving review…</p>}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {!noDocuments && activeId && <>
                 {currentStatus === 'VERIFIED' || currentStatus === 'REJECTED' ? onReset && <button type="button" disabled={busy} onClick={() => void decide('reset')} className="rounded-full bg-zinc-100 px-4 py-2.5 text-xs font-semibold text-zinc-700 disabled:opacity-40">Re-open document</button>
-                  : onReject && <button type="button" disabled={busy} onClick={() => setRejectDraft({ id: activeId, reason: '' })} className="rounded-full bg-rose-50 px-4 py-2.5 text-xs font-semibold text-rose-700 disabled:opacity-40">Reject document</button>}
-                {currentStatus !== 'VERIFIED' && onApprove && <button type="button" disabled={busy || !imagesReady || rejectDraft?.id === activeId} onClick={() => void decide('approve')} className="rounded-full bg-emerald-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-40">Approve document</button>}
+                  : onReject && <button type="button" disabled={busy} onClick={() => setRejectDraft({ id: activeId, reason: selectedDocument.screening?.suggested_rejection_reason || '' })} className="rounded-full bg-rose-50 px-4 py-2.5 text-xs font-semibold text-rose-700 disabled:opacity-40">Reject document</button>}
+                {currentStatus !== 'VERIFIED' && onApprove && <button type="button" disabled={busy || !imagesReady || hasBlockingFlag || rejectDraft?.id === activeId} onClick={() => void decide('approve')} className="rounded-full bg-emerald-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-40">Approve document</button>}
               </>}
               <button type="button" disabled={busy} onClick={close} className="rounded-full bg-zinc-100 px-4 py-2.5 text-xs font-semibold text-zinc-700 disabled:opacity-40">Done</button>
             </div>

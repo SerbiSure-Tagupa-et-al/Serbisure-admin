@@ -44,6 +44,8 @@ export const DocumentPreview: React.FC = () => {
     setIsComparisonModalOpen
   } = useAdmin();
   const [rejectReason, setRejectReason] = useState('');
+  const [overrideChecked, setOverrideChecked] = useState(false);
+  const [overrideReason, setOverrideReason] = useState('');
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [showImageModal, setShowImageModal] = useState<boolean>(false);
   const [idSide, setIdSide] = useState<'front' | 'back'>('front');
@@ -56,9 +58,15 @@ export const DocumentPreview: React.FC = () => {
     setIdSide('front');
     setImageRotation(0);
     setCopiedNumber(false);
-    setRejectReason('');
+    setOverrideChecked(false);
+    setOverrideReason('');
+    setRejectReason(
+      selectedItem?.status === 'PENDING / REVIEW' && selectedItem?.screening?.suggested_rejection_reason
+        ? selectedItem.screening.suggested_rejection_reason
+        : ''
+    );
     setFeedbackMessage(null);
-  }, [selectedVerificationId]);
+  }, [selectedVerificationId, selectedItem?.screening?.suggested_rejection_reason, selectedItem?.status]);
 
   if (!selectedItem) {
     return (
@@ -347,9 +355,24 @@ export const DocumentPreview: React.FC = () => {
   );
 }
 
+  const activeScreening = selectedItem.screening || null;
+  const hasBlockingScreeningFlag = Boolean(activeScreening?.has_blocking_flag);
+  const approvalLocked = hasBlockingScreeningFlag && (!overrideChecked || !overrideReason.trim());
+
   const handleApproveById = async (targetId: string, docLabel?: string) => {
+    if (approvalLocked) {
+      setFeedbackMessage('Confirm manual override and provide a justification note before approving.');
+      return;
+    }
     try {
-      await approveVerification(targetId);
+      await approveVerification(
+        targetId,
+        hasBlockingScreeningFlag
+          ? { overrideWarning: true, overrideReason: overrideReason.trim() }
+          : undefined,
+      );
+      setOverrideChecked(false);
+      setOverrideReason('');
       setFeedbackMessage('Approved only this document: ' + (docLabel || selectedItem.documentType));
     } catch (error) {
       setFeedbackMessage('Approval failed: ' + (error instanceof Error ? error.message : 'Please try again.'));
@@ -542,6 +565,66 @@ export const DocumentPreview: React.FC = () => {
             <div className="my-3 p-3 bg-emerald-50 text-emerald-800 text-xs font-bold rounded-2xl flex items-center gap-2">
               <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>{feedbackMessage}</span>
+            </div>
+          )}
+
+          {/* High-Visibility Red Warning Banner when automated screening flags an issue */}
+          {hasBlockingScreeningFlag && currentDocStatus !== 'VERIFIED' && (
+            <div role="alert" className="my-3 rounded-2xl border border-rose-200 bg-rose-50 p-3.5 text-rose-900">
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="text-xs font-black font-display text-rose-800">
+                    Automated Screening Alert — Manual Check Required
+                  </div>
+                  {(activeScreening?.blocking_reasons || []).map((reason, index) => (
+                    <p key={index} className="text-[11px] font-medium leading-relaxed text-rose-800/90">
+                      • {reason}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 4-Point Traffic-Light Screening Bar */}
+          {activeScreening?.checks && (
+            <div aria-label="Automated document screening checks" className="my-3 grid grid-cols-2 gap-2">
+              {([
+                { key: 'document_type_match', label: 'Document Type' },
+                { key: 'name_match', label: 'Name Match' },
+                { key: 'not_expired', label: 'Not Expired' },
+                { key: 'image_clarity', label: 'Image Clarity' },
+              ] as const).map(({ key, label }) => {
+                const state = activeScreening.checks[key];
+                const style =
+                  state === 'pass'
+                    ? 'border-emerald-200 bg-emerald-50/80 text-emerald-800'
+                    : state === 'fail'
+                    ? 'border-rose-200 bg-rose-50 text-rose-800'
+                    : state === 'warn'
+                    ? 'border-amber-200 bg-amber-50 text-amber-900'
+                    : 'border-zinc-200 bg-zinc-50 text-zinc-600';
+                const badgeText =
+                  state === 'pass' ? 'Pass' : state === 'fail' ? 'Fail' : state === 'warn' ? 'Check' : 'N/A';
+                const dotColor =
+                  state === 'pass'
+                    ? 'bg-emerald-500'
+                    : state === 'fail'
+                    ? 'bg-rose-500'
+                    : state === 'warn'
+                    ? 'bg-amber-500'
+                    : 'bg-zinc-400';
+                return (
+                  <div key={key} className={`flex items-center justify-between gap-2 rounded-xl border px-2.5 py-2 text-[11px] font-semibold ${style}`}>
+                    <span className="flex items-center gap-1.5 truncate">
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
+                      <span className="truncate">{label}</span>
+                    </span>
+                    <span className="text-[10px] font-black uppercase tracking-wider shrink-0">{badgeText}</span>
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -878,6 +961,30 @@ export const DocumentPreview: React.FC = () => {
                 )}
               </div>
 
+              {hasBlockingScreeningFlag && (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-3 space-y-2">
+                  <label className="flex items-start gap-2 text-xs font-semibold text-rose-900 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={overrideChecked}
+                      onChange={(e) => setOverrideChecked(e.target.checked)}
+                      className="mt-0.5 rounded border-rose-300 text-rose-600 focus:ring-rose-500"
+                    />
+                    <span>Override automated warning (manual verification)</span>
+                  </label>
+                  {overrideChecked && (
+                    <input
+                      type="text"
+                      aria-label="Manual override justification"
+                      value={overrideReason}
+                      onChange={(e) => setOverrideReason(e.target.value)}
+                      placeholder="Explain why this flagged document is valid (recorded in Audit Log)..."
+                      className="w-full rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs text-zinc-800 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-rose-200"
+                    />
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
@@ -890,8 +997,9 @@ export const DocumentPreview: React.FC = () => {
 
                 <button
                   type="button"
+                  disabled={approvalLocked}
                   onClick={handleApprove}
-                  className="w-full py-3 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black font-display tracking-wider uppercase transition-all cursor-pointer flex items-center justify-center gap-1.5 border-0"
+                  className="w-full py-3 rounded-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-zinc-200 disabled:text-zinc-400 disabled:cursor-not-allowed text-white text-xs font-black font-display tracking-wider uppercase transition-all cursor-pointer flex items-center justify-center gap-1.5 border-0"
                 >
                   <CheckCircle className="w-4 h-4" />
                   <span>OVERRIDE</span>
@@ -925,6 +1033,30 @@ export const DocumentPreview: React.FC = () => {
             </div>
           ) : (
             <>
+              {hasBlockingScreeningFlag && (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-3 space-y-2">
+                  <label className="flex items-start gap-2 text-xs font-semibold text-rose-900 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={overrideChecked}
+                      onChange={(e) => setOverrideChecked(e.target.checked)}
+                      className="mt-0.5 rounded border-rose-300 text-rose-600 focus:ring-rose-500"
+                    />
+                    <span>Override automated warning (manual verification)</span>
+                  </label>
+                  {overrideChecked && (
+                    <input
+                      type="text"
+                      aria-label="Manual override justification"
+                      value={overrideReason}
+                      onChange={(e) => setOverrideReason(e.target.value)}
+                      placeholder="Explain why this flagged document is valid (recorded in Audit Log)..."
+                      className="w-full rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs text-zinc-800 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-rose-200"
+                    />
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
@@ -937,11 +1069,13 @@ export const DocumentPreview: React.FC = () => {
                 
                 <button
                   type="button"
+                  disabled={approvalLocked}
                   onClick={handleApprove}
-                  className="w-full py-3.5 rounded-full bg-[#FFB380] hover:bg-[#F5A066] text-white text-xs font-black font-display tracking-wider uppercase transition-all cursor-pointer flex items-center justify-center gap-1.5 border-0"
+                  title={approvalLocked ? 'Check manual override and enter justification to unlock approval' : 'Approve this document'}
+                  className="w-full py-3.5 rounded-full bg-[#FFB380] hover:bg-[#F5A066] disabled:bg-zinc-200 disabled:text-zinc-400 disabled:cursor-not-allowed text-white text-xs font-black font-display tracking-wider uppercase transition-all cursor-pointer flex items-center justify-center gap-1.5 border-0"
                 >
                   <CheckCircle className="w-4 h-4" />
-                  <span>APPROVE</span>
+                  <span>{approvalLocked ? 'APPROVE LOCKED' : 'APPROVE'}</span>
                 </button>
               </div>
 
@@ -1083,6 +1217,7 @@ export const DocumentPreview: React.FC = () => {
           issuedDate: selectedItem.issuedDate,
           validityDate: selectedItem.validityDate,
           ocrExtractedData: selectedItem.ocrExtractedData,
+          screening: selectedItem.screening,
         }}
         onApprove={documentId => approveVerification(documentId || selectedItem.id)}
         onReject={(reason, documentId) => rejectVerification(documentId || selectedItem.id, reason)}

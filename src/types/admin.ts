@@ -48,6 +48,29 @@ export interface SkillsDistribution {
   categories: { category: string; count: number; percentage: number }[];
 }
 
+export type ScreeningCheckStatus = 'pass' | 'warn' | 'fail' | 'na';
+
+export interface DocumentScreeningSummary {
+  checks: {
+    document_type_match: ScreeningCheckStatus;
+    name_match: ScreeningCheckStatus;
+    not_expired: ScreeningCheckStatus;
+    image_clarity: ScreeningCheckStatus;
+  };
+  detected_document_type?: string | null;
+  primary_issue?: string | null;
+  has_blocking_flag: boolean;
+  blocking_reasons?: string[];
+  suggested_rejection_reason?: string | null;
+  user_alert?: {
+    level: 'error' | 'warning';
+    code: string;
+    title: string;
+    message: string;
+    action_label: string;
+  } | null;
+}
+
 export interface VerificationRequest {
   id: string;
   name: string;
@@ -144,6 +167,7 @@ export interface VerificationRequest {
     document_value?: string;
   }>;
   ocrMatchScore?: number | null; // Document text matching, percentage 0..100.
+  screening?: DocumentScreeningSummary | null;
   accountName?: string;
   accountRegistration?: {
     first_name: string | null;

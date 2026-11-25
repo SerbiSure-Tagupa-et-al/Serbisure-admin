@@ -79,7 +79,8 @@ export async function reviewVerification(
   documentId: string,
   action: 'approve' | 'reject' | 'reset',
   rejectionReason?: string,
-  reviewerEmail?: string
+  reviewerEmail?: string,
+  overrideOptions?: { overrideWarning?: boolean; overrideReason?: string }
 ): Promise<{ message: string; document: VerificationRequest }> {
   return fetchApi<{ message: string; document: VerificationRequest }>(
     `/api/v1/verifications/admin/review/${documentId}/`,
@@ -89,6 +90,12 @@ export async function reviewVerification(
         action,
         rejection_reason: rejectionReason || '',
         reviewer_email: reviewerEmail || '',
+        ...(overrideOptions?.overrideWarning
+          ? {
+              override_warning: true,
+              override_reason: overrideOptions.overrideReason || '',
+            }
+          : {}),
       }),
     }
   );
