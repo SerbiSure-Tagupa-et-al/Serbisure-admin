@@ -209,7 +209,8 @@ export interface BookingCompliance {
   serviceCategory: string;
   monthlyBookingsCount: number; // Max 3 per month
   isCapped: boolean; // true if >= 3 bookings
-  offeredWage: number;
+  offeredWage: number | null;
+  posterAccountType?: 'Homeowner' | 'Kasambahay';
   minimumWageBaseline: number | null;
   ratePeriod?: 'day' | 'month';
   pairKey?: string | null;

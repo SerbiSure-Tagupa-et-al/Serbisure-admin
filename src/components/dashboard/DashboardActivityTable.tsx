@@ -27,6 +27,22 @@ import { correctionSummary } from '../../data/reviewerCorrections';
 
 const ITEMS_PER_PAGE = 5;
 
+export const isKasambahayOpenPost = (booking: BookingCompliance): boolean =>
+  booking.homeownerName === 'Unassigned' || booking.offeredWage == null || Number(booking.offeredWage) <= 0;
+
+function bookingPeriod(booking: BookingCompliance): 'day' | 'month' {
+  return booking.ratePeriod || (booking.contractType.includes('Long-Term') ? 'month' : 'day');
+}
+
+export function bookingWageLabel(booking: BookingCompliance): string {
+  return isKasambahayOpenPost(booking) ? '-'
+    : `₱${Number(booking.offeredWage).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / ${bookingPeriod(booking)}`;
+}
+
+function contractTypeLabel(booking: BookingCompliance): string {
+  return bookingPeriod(booking) === 'month' ? 'Full-time / Monthly' : 'Part-time / Daily';
+}
+
 interface CompactPaginationProps {
   page: number;
   totalPages: number;
@@ -217,7 +233,7 @@ function buildPdfReport(
       <th style="width: 5%; text-align: center;">#</th>
       <th style="width: 20%;">Employer / Household</th>
       <th style="width: 20%;">Kasambahay / Worker</th>
-      <th style="width: 14%;">Monthly Wage</th>
+      <th style="width: 14%;">Wage / Rate</th>
       <th style="width: 14%; text-align: center;">Contract Type</th>
       <th style="width: 13%;">Date Posted</th>
       <th style="width: 14%; text-align: center;">Compliance Status</th>
@@ -227,14 +243,9 @@ function buildPdfReport(
       const employerSub = b.barangay ? `Barangay ${b.barangay}` : 'Barangay Not Specified';
       const workerName = b.workerName || 'Unassigned Worker';
       const workerSub = b.serviceCategory || 'Domestic Worker';
-      const wageDisplay = b.offeredWage != null ? `₱${Number(b.offeredWage).toLocaleString()}` : '—';
+      const wageDisplay = bookingWageLabel(b);
       const isBelowWage = Boolean(b.isBelowMinimumWage);
-      const contract = b.contractType || 'Standard Agreement';
-      const contractDisplay = contract.includes('Formal')
-        ? 'Formal (Long-Term)'
-        : contract.includes('Short')
-        ? 'Short-Term On-Demand'
-        : contract;
+      const contractDisplay = contractTypeLabel(b);
       const rawStatus = b.bookingStatus || b.status || 'Pending';
 
       return `
@@ -250,9 +261,9 @@ function buildPdfReport(
           </td>
           <td>
             <div style="font-weight: 800; font-size: 13px; color: #0F172A;">
-              ${escapeHtml(wageDisplay)} <span style="font-weight: 500; font-size: 11px; color: #64748B;">/ month</span>
+              ${escapeHtml(wageDisplay)}
             </div>
-            ${isBelowWage 
+            ${isKasambahayOpenPost(b) ? '' : isBelowWage
               ? '<div style="font-size: 10px; font-weight: 700; color: #DC2626; margin-top: 3px;">⚠️ Below RA 10361 Min. Wage</div>' 
               : '<div style="font-size: 10px; font-weight: 700; color: #059669; margin-top: 3px;">✅ Wage Compliant</div>'}
           </td>
@@ -659,6 +670,7 @@ export const DashboardActivityTable: React.FC = () => {
       (b.homeownerName || '').toLowerCase().includes(q) ||
       (b.workerName || '').toLowerCase().includes(q) ||
       (b.contractType || '').toLowerCase().includes(q) ||
+      contractTypeLabel(b).toLowerCase().includes(q) ||
       (b.serviceCategory || '').toLowerCase().includes(q) ||
       (b.barangay || '').toLowerCase().includes(q) ||
       (b.bookingStatus || '').toLowerCase().includes(q)
@@ -1037,7 +1049,7 @@ export const DashboardActivityTable: React.FC = () => {
                   <tr className="text-zinc-400 font-extrabold font-display uppercase tracking-wider text-[11px]">
                     <th className="pb-3 px-3">Employer</th>
                     <th className="pb-3 px-3">Kasambahay</th>
-                    <th className="pb-3 px-3">Monthly Wage</th>
+                    <th className="pb-3 px-3">Wage / Rate</th>
                     <th className="pb-3 px-3">Contract Type</th>
                     <th className="pb-3 px-3">Date Posted</th>
                     <th className="pb-3 px-3 text-right">Status</th>
@@ -1063,11 +1075,11 @@ export const DashboardActivityTable: React.FC = () => {
                         </div>
                       </td>
                       <td data-label="Pay" className="py-3 px-3 font-black font-display text-zinc-900">
-                        ₱{b.offeredWage.toLocaleString()} / {b.ratePeriod || (b.contractType.includes('Long-Term') ? 'month' : 'day')}
+                        <span className={isKasambahayOpenPost(b) ? 'text-zinc-400 font-normal' : undefined}>{bookingWageLabel(b)}</span>
                       </td>
                       <td data-label="Contract" className="py-3 px-3">
                         <span className="px-3 py-1 rounded-full bg-zinc-100 text-zinc-800 text-[11px] font-bold">
-                          {b.contractType}
+                          {contractTypeLabel(b)}
                         </span>
                       </td>
                       <td data-label="Date Posted" className="py-3 px-3 whitespace-nowrap">
