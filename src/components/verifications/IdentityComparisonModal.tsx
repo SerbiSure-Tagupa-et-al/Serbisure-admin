@@ -5,12 +5,13 @@ import type { VerificationRequest, VerificationStatus } from '../../types/admin'
 import { getOptimizedWebpUrl, isDefaultAvatar } from '../../utils/imageOptimizer';
 import { ReviewImageViewer, type ReviewImageStatus } from './ReviewImageViewer';
 import { VerificationStatusBadge } from './VerificationStatusBadge';
+import { PurgedMediaCard } from './PurgedMediaCard';
 
 type ComparisonDocument = Partial<VerificationRequest> & {
   primaryDocumentId?: string;
   documentType: string;
   documentNumber: string;
-  documentImage: string;
+  documentImage: string | null;
 };
 
 export interface IdentityComparisonModalProps {
@@ -53,6 +54,7 @@ export const IdentityComparisonContent: React.FC<IdentityComparisonModalProps> =
   const currentStatus: VerificationStatus = noDocuments ? 'NO_DOCUMENTS' : selectedDocument.primaryStatus || selectedDocument.status || 'PENDING / REVIEW';
   const avatarUrl = isDefaultAvatar(user.avatar) ? '' : getOptimizedWebpUrl(user.avatar, { width: 1200, quality: 'auto:good' });
   const documentUrl = getOptimizedWebpUrl(selectedDocument.documentImage, { width: 2000, quality: 'auto:good' });
+  const mediaPurged = Boolean(selectedDocument.mediaPurgedAt && !documentUrl);
   const documentKey = `${activeId}:${documentUrl}`;
   const [photoState, setPhotoState] = useState<{ key: string; status: ReviewImageStatus }>({ key: '', status: 'missing' });
   const [documentState, setDocumentState] = useState<{ key: string; status: ReviewImageStatus }>({ key: '', status: 'missing' });
@@ -83,7 +85,7 @@ export const IdentityComparisonContent: React.FC<IdentityComparisonModalProps> =
   }, []);
 
   const decide = async (action: 'approve' | 'reject' | 'reset') => {
-    if (saving.current || noDocuments || !activeId || (action === 'approve' && !imagesReady)) return;
+    if (saving.current || noDocuments || mediaPurged || !activeId || (action === 'approve' && !imagesReady)) return;
     const callback = action === 'approve' ? onApprove : action === 'reject' ? onReject : onReset;
     if (!callback) return;
     saving.current = true; setBusy(true); setFeedback(null);
@@ -139,7 +141,8 @@ export const IdentityComparisonContent: React.FC<IdentityComparisonModalProps> =
           </div>
           <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2">
             <ReviewImageViewer key={`photo:${avatarUrl}`} src={avatarUrl} label="Profile photo" onStatus={photoStatus} />
-            <ReviewImageViewer key={`document:${documentKey}`} src={documentUrl} label={noDocuments ? 'Document' : selectedDocument.documentType} onStatus={documentStatus} />
+            {mediaPurged ? <PurgedMediaCard purgedAt={selectedDocument.mediaPurgedAt!} />
+              : <ReviewImageViewer key={`document:${documentKey}`} src={documentUrl} label={noDocuments ? 'Document' : selectedDocument.documentType} onStatus={documentStatus} />}
           </div>
           {isDefaultAvatar(user.avatar) && <p role="status" className="mt-3 text-xs text-amber-800">This account has no personal profile photo. A generated avatar cannot be used for face comparison.</p>}
           {selectedDocument.notes && currentStatus === 'REJECTED' && <p className="mt-3 break-words text-xs text-rose-700">Rejection reason: {selectedDocument.notes}</p>}
@@ -147,7 +150,7 @@ export const IdentityComparisonContent: React.FC<IdentityComparisonModalProps> =
 
         <footer aria-busy={busy} className="shrink-0 space-y-3 border-t border-zinc-200/70 bg-white px-4 py-3 sm:px-6">
           {activeFeedback && <p role={activeFeedback.error ? 'alert' : 'status'} className={`text-sm ${activeFeedback.error ? 'text-rose-700' : 'text-emerald-700'}`}>{activeFeedback.text}</p>}
-          {rejectDraft?.id === activeId && <form className="flex flex-wrap items-center gap-2" onSubmit={event => { event.preventDefault(); void decide('reject'); }}>
+          {!mediaPurged && rejectDraft?.id === activeId && <form className="flex flex-wrap items-center gap-2" onSubmit={event => { event.preventDefault(); void decide('reject'); }}>
             <input autoFocus aria-label="Reason for rejecting this document" disabled={busy} value={rejectDraft.reason} placeholder="Reason for rejection (optional)" maxLength={2000} onChange={event => setRejectDraft({ id: activeId, reason: event.target.value })} className="min-w-0 flex-1 rounded-xl border border-zinc-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200" />
             <button type="button" disabled={busy} onClick={() => setRejectDraft(null)} className="rounded-full px-3 py-2 text-xs text-zinc-500">Cancel</button>
             <button type="submit" disabled={busy} className="rounded-full bg-rose-600 px-4 py-2.5 text-xs font-semibold text-white disabled:opacity-40">Confirm rejection</button>
@@ -155,12 +158,12 @@ export const IdentityComparisonContent: React.FC<IdentityComparisonModalProps> =
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-semibold text-zinc-800">{selectedDocument.documentType}</span><VerificationStatusBadge status={currentStatus} /></div>
-              {!noDocuments && !imagesReady && currentStatus !== 'VERIFIED' && <p className="mt-1 text-[11px] text-zinc-500">Both images must load before approving.</p>}
+              {!noDocuments && !mediaPurged && !imagesReady && currentStatus !== 'VERIFIED' && <p className="mt-1 text-[11px] text-zinc-500">Both images must load before approving.</p>}
               {hasBlockingFlag && <p className="mt-1 text-[11px] font-semibold text-rose-700">Automated screening warning active — reject here or close to review &amp; override in Document Preview.</p>}
               {busy && <p role="status" className="mt-1 inline-flex items-center gap-2 text-xs text-zinc-500"><Loader2 className="h-3 w-3 animate-spin" />Saving review…</p>}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {!noDocuments && activeId && <>
+              {!noDocuments && !mediaPurged && activeId && <>
                 {currentStatus === 'VERIFIED' || currentStatus === 'REJECTED' ? onReset && <button type="button" disabled={busy} onClick={() => void decide('reset')} className="rounded-full bg-zinc-100 px-4 py-2.5 text-xs font-semibold text-zinc-700 disabled:opacity-40">Re-open document</button>
                   : onReject && <button type="button" disabled={busy} onClick={() => setRejectDraft({ id: activeId, reason: selectedDocument.screening?.suggested_rejection_reason || '' })} className="rounded-full bg-rose-50 px-4 py-2.5 text-xs font-semibold text-rose-700 disabled:opacity-40">Reject document</button>}
                 {currentStatus !== 'VERIFIED' && onApprove && <button type="button" disabled={busy || !imagesReady || hasBlockingFlag || rejectDraft?.id === activeId} onClick={() => void decide('approve')} className="rounded-full bg-emerald-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-40">Approve document</button>}

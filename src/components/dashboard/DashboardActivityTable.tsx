@@ -26,6 +26,28 @@ import { AuditCorrectionDetails } from './AuditCorrectionDetails';
 import { correctionSummary } from '../../data/reviewerCorrections';
 
 const ITEMS_PER_PAGE = 5;
+type ActivityTab = 'DEPLOYMENTS' | 'VERIFICATIONS' | 'AUDIT_TRAIL' | 'RETENTION_LOGS';
+const RETENTION_ACTIONS: Record<string, string> = {
+  retention_cron_run: 'Cron Run',
+  retention_media_purged: 'Image Purged',
+  retention_media_retired: 'Queued',
+  retention_account_closed: 'Account Closed',
+};
+
+function retentionAction(log: AuditLogEntry): string {
+  const label = RETENTION_ACTIONS[log.metadata?.reason_code];
+  return typeof label === 'string' ? label : '';
+}
+
+function filterAuditLogs(logs: AuditLogEntry[], searchTerm: string): AuditLogEntry[] {
+  const query = searchTerm.trim().toLowerCase();
+  if (!query) return logs;
+  return logs.filter(log => [log.actor_name, log.actor_role, log.actor_barangay,
+    log.target_name, log.target_barangay, log.document_type, formatDocType(log.document_type),
+    log.action, log.reason, log.metadata?.category, log.metadata?.reason_code,
+    retentionAction(log), correctionSummary(log.metadata)]
+    .some(value => String(value || '').toLowerCase().includes(query)));
+}
 
 export const isKasambahayOpenPost = (booking: BookingCompliance): boolean =>
   booking.homeownerName === 'Unassigned' || booking.offeredWage == null || Number(booking.offeredWage) <= 0;
@@ -206,8 +228,8 @@ function formatStatusTransition(prev?: string | null, next?: string | null): str
   return `<span style="font-weight:700;color:#64748B;">${escapeHtml(p)}</span> <span style="color:#94A3B8;font-weight:900;margin:0 4px;">&rarr;</span> <span style="font-weight:700;color:#0F172A;">${escapeHtml(n)}</span>`;
 }
 
-function buildPdfReport(
-  tab: 'DEPLOYMENTS' | 'VERIFICATIONS' | 'AUDIT_TRAIL',
+export function buildPdfReport(
+  tab: ActivityTab,
   filteredBookings: BookingCompliance[],
   filteredVerifications: VerificationRequest[],
   filteredAuditLogs: AuditLogEntry[],
@@ -321,9 +343,13 @@ function buildPdfReport(
         </tr>
       `;
     }).join('');
-  } else if (tab === 'AUDIT_TRAIL') {
-    title = 'System Audit Trail & Administrative Activity Log';
-    subtitle = 'Official Immutable Record of Administrative Reviews, Verifications, and Account Actions';
+  } else if (tab === 'AUDIT_TRAIL' || tab === 'RETENTION_LOGS') {
+    title = tab === 'RETENTION_LOGS'
+      ? 'RA 10173 Verification Media Retention & Disposal Log'
+      : 'System Audit Trail & Administrative Activity Log';
+    subtitle = tab === 'RETENTION_LOGS'
+      ? 'Official Automated Schedule & Cloud Media Purge Record (Data Privacy Act Compliance)'
+      : 'Official Immutable Record of Administrative Reviews, Verifications, and Account Actions';
     count = filteredAuditLogs.length;
     colSpan = 7;
     tableHeaders = `
@@ -336,9 +362,9 @@ function buildPdfReport(
       <th style="width: 12%;">Recorded Timestamp</th>
     `;
     tableRows = filteredAuditLogs.map((a, idx) => {
-      const actorName = a.actor_name || 'System Administrator';
+      const actorName = a.actor_name || (tab === 'RETENTION_LOGS' ? 'System / Automated' : 'System Administrator');
       const actorSub = [a.actor_role, a.actor_barangay ? `Brgy. ${a.actor_barangay}` : ''].filter(Boolean).join(' • ') || 'LGU Administration';
-      const actionPill = getAuditActionPill(a.action);
+      const actionPill = getAuditActionPill(retentionAction(a) || a.action);
       const targetName = a.target_name || 'Resident';
       const targetSub = [formatDocType(a.document_type), a.target_barangay ? `Brgy. ${a.target_barangay}` : ''].filter(Boolean).join(' • ') || '—';
       const edits = correctionSummary(a.metadata);
@@ -624,11 +650,12 @@ function buildPdfReport(
 
 export const DashboardActivityTable: React.FC = () => {
   const { verifications, bookings, auditLogs, isLoadingDashboardActivity, isLoadingAuditLogs, setActiveNav, currentRole, selectedBarangay } = useAdmin();
-  const [activeTab, setActiveTab] = useState<'DEPLOYMENTS' | 'VERIFICATIONS' | 'AUDIT_TRAIL'>('DEPLOYMENTS');
+  const [activeTab, setActiveTab] = useState<ActivityTab>('DEPLOYMENTS');
   const [searchTerm, setSearchTerm] = useState('');
   const [bookingsPage, setBookingsPage] = useState(1);
   const [verificationsPage, setVerificationsPage] = useState(1);
   const [auditPage, setAuditPage] = useState(1);
+  const [retentionPage, setRetentionPage] = useState(1);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const exportContainerRef = useRef<HTMLDivElement>(null);
@@ -646,7 +673,7 @@ export const DashboardActivityTable: React.FC = () => {
       : bookings;
   }, [currentRole, selectedBarangay, bookings]);
 
-  const scopedAuditLogs = useMemo(() => {
+  const scopedLogs = useMemo(() => {
     const normalize = (value?: string | null) => (value || '').replace(/^(brgy\.?|barangay)\s+/i, '').trim().toLowerCase();
     return (currentRole === 'ADMIN' && selectedBarangay)
       ? auditLogs.filter(a => 
@@ -654,12 +681,15 @@ export const DashboardActivityTable: React.FC = () => {
         )
       : auditLogs;
   }, [currentRole, selectedBarangay, auditLogs]);
+  const scopedAuditLogs = useMemo(() => scopedLogs.filter(log => !retentionAction(log)), [scopedLogs]);
+  const scopedRetentionLogs = useMemo(() => scopedLogs.filter(log => Boolean(retentionAction(log))), [scopedLogs]);
 
   // Reset pagination on filter or tab changes
   useEffect(() => {
     setBookingsPage(1);
     setVerificationsPage(1);
     setAuditPage(1);
+    setRetentionPage(1);
   }, [searchTerm, selectedBarangay, activeTab]);
 
   // Filtered lists
@@ -689,22 +719,8 @@ export const DashboardActivityTable: React.FC = () => {
     );
   }, [scopedVerifications, searchTerm]);
 
-  const filteredAuditLogs = useMemo(() => {
-    if (!searchTerm.trim()) return scopedAuditLogs;
-    const q = searchTerm.toLowerCase().trim();
-    return scopedAuditLogs.filter(a => 
-      (a.actor_name || '').toLowerCase().includes(q) ||
-      (a.actor_role || '').toLowerCase().includes(q) ||
-      (a.actor_barangay || '').toLowerCase().includes(q) ||
-      (a.target_name || '').toLowerCase().includes(q) ||
-      (a.target_barangay || '').toLowerCase().includes(q) ||
-      (a.document_type || '').toLowerCase().includes(q) ||
-      formatDocType(a.document_type).toLowerCase().includes(q) ||
-      (a.action || '').toLowerCase().includes(q) ||
-      (a.reason || '').toLowerCase().includes(q) ||
-      correctionSummary(a.metadata).toLowerCase().includes(q)
-    );
-  }, [scopedAuditLogs, searchTerm]);
+  const filteredAuditLogs = useMemo(() => filterAuditLogs(scopedAuditLogs, searchTerm), [scopedAuditLogs, searchTerm]);
+  const filteredRetentionLogs = useMemo(() => filterAuditLogs(scopedRetentionLogs, searchTerm), [scopedRetentionLogs, searchTerm]);
 
   // Safe pagination calculations for bookings
   const totalBookings = filteredBookings.length;
@@ -723,12 +739,17 @@ export const DashboardActivityTable: React.FC = () => {
   const paginatedVerifications = filteredVerifications.slice(startVerifIdx, endVerifIdx);
 
   // Safe pagination calculations for audit logs
-  const totalAuditLogs = filteredAuditLogs.length;
+  const isRetentionTab = activeTab === 'RETENTION_LOGS';
+  const activeLogs = isRetentionTab ? filteredRetentionLogs : filteredAuditLogs;
+  const logPage = isRetentionTab ? retentionPage : auditPage;
+  const setLogPage = isRetentionTab ? setRetentionPage : setAuditPage;
+  const logLabel = isRetentionTab ? 'RA 10173 logs' : 'Audit trail';
+  const totalAuditLogs = activeLogs.length;
   const totalAuditPages = Math.max(1, Math.ceil(totalAuditLogs / ITEMS_PER_PAGE));
-  const safeAuditPage = Math.min(Math.max(1, auditPage), totalAuditPages);
+  const safeAuditPage = Math.min(Math.max(1, logPage), totalAuditPages);
   const startAuditIdx = (safeAuditPage - 1) * ITEMS_PER_PAGE;
   const endAuditIdx = Math.min(startAuditIdx + ITEMS_PER_PAGE, totalAuditLogs);
-  const paginatedAuditLogs = filteredAuditLogs.slice(startAuditIdx, endAuditIdx);
+  const paginatedAuditLogs = activeLogs.slice(startAuditIdx, endAuditIdx);
 
   // Helper for status badge styling
   const renderBookingStatusBadge = (status?: string) => {
@@ -809,7 +830,7 @@ export const DashboardActivityTable: React.FC = () => {
     }
     return (
       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-zinc-100 text-zinc-800">
-        <span>{act}</span>
+        <span>{action}</span>
       </span>
     );
   };
@@ -818,7 +839,7 @@ export const DashboardActivityTable: React.FC = () => {
     const isEmpty = 
       (activeTab === 'DEPLOYMENTS' && filteredBookings.length === 0) ||
       (activeTab === 'VERIFICATIONS' && filteredVerifications.length === 0) ||
-      (activeTab === 'AUDIT_TRAIL' && filteredAuditLogs.length === 0);
+      ((activeTab === 'AUDIT_TRAIL' || isRetentionTab) && activeLogs.length === 0);
 
     if (isEmpty) {
       setExportMessage('No data to export for the current filters.');
@@ -838,6 +859,7 @@ export const DashboardActivityTable: React.FC = () => {
       DEPLOYMENTS: 'placements-bookings',
       VERIFICATIONS: 'verifications',
       AUDIT_TRAIL: 'audit-trail',
+      RETENTION_LOGS: 'ra10173-disposal-logs',
     };
     const tabLabel = TAB_LABELS[activeTab] ?? 'report';
     const dateStr = new Date().toISOString().slice(0, 10);
@@ -857,7 +879,7 @@ export const DashboardActivityTable: React.FC = () => {
       activeTab,
       filteredBookings,
       filteredVerifications,
-      filteredAuditLogs,
+      activeLogs,
       { barangay, generatedAt, searchTerm }
     );
 
@@ -906,7 +928,7 @@ export const DashboardActivityTable: React.FC = () => {
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5">
         
         {/* Navigation Tabs with Pills */}
-        <div className="dashboard-activity-tabs grid grid-cols-3 sm:flex sm:flex-wrap min-w-0 gap-1.5 sm:gap-2 text-xs font-extrabold font-display pb-1">
+        <div className="dashboard-activity-tabs grid grid-cols-1 min-[420px]:grid-cols-2 sm:flex sm:flex-wrap min-w-0 gap-1.5 sm:gap-2 text-xs font-extrabold font-display pb-1">
           <button
             type="button"
             onClick={() => setActiveTab('DEPLOYMENTS')}
@@ -941,6 +963,17 @@ export const DashboardActivityTable: React.FC = () => {
             }`}
           >
             Audit Trail ({scopedAuditLogs.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('RETENTION_LOGS')}
+            className={`px-5 py-2.5 rounded-full transition-all whitespace-nowrap shrink-0 cursor-pointer ${
+              isRetentionTab
+                ? 'bg-[#0D0D11] text-white font-black shadow-xs'
+                : 'bg-[#F0F0EC] text-zinc-600 hover:bg-[#EAEAE5] hover:text-zinc-900'
+            }`}
+          >
+            RA 10173 Logs ({scopedRetentionLogs.length})
           </button>
         </div>
 
@@ -1198,21 +1231,22 @@ export const DashboardActivityTable: React.FC = () => {
           )
         )}
 
-        {activeTab === 'AUDIT_TRAIL' && (
+        {(activeTab === 'AUDIT_TRAIL' || isRetentionTab) && (
           isLoadingAuditLogs ? (
             <div className="flex flex-col items-center justify-center py-12 gap-2 text-zinc-400">
               <Loader2 className="w-5 h-5 animate-spin text-[#FFB380]" />
-              <p className="text-xs font-medium">Loading audit trail events...</p>
+              <p className="text-xs font-medium">Loading {logLabel.toLowerCase()} events...</p>
             </div>
           ) : totalAuditLogs === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 gap-2 text-zinc-400">
               <History className="w-8 h-8 text-zinc-300" />
               <p className="text-xs font-bold text-zinc-600">
-                {searchTerm ? `No audit logs matching "${searchTerm}"` : 'No audit trail logs recorded yet'}
+                {searchTerm ? `No ${isRetentionTab ? 'RA 10173 logs' : 'audit logs'} matching "${searchTerm}"` : `No ${logLabel.toLowerCase()} recorded yet`}
               </p>
               <p className="text-[11px] text-zinc-400 max-w-sm text-center">
                 {searchTerm 
                   ? 'Try checking for typos or searching by another official, resident, or document.' 
+                  : isRetentionTab ? 'Daily retention checks, queued images, disposal, and account closure events will appear here.'
                   : 'Actions like verifying, rejecting, resetting, or deleting documents will automatically appear here.'}
               </p>
               {searchTerm && (
@@ -1262,7 +1296,7 @@ export const DashboardActivityTable: React.FC = () => {
                             )}
                             <div>
                               <span className="font-bold font-display text-zinc-900 block">
-                                {log.actor_name || 'System Automated'}
+                                {log.actor_name || 'System / Automated'}
                               </span>
                               <div className="flex items-center gap-1.5 mt-0.5">
                                 <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-zinc-100 text-zinc-600 font-bold uppercase">
@@ -1280,7 +1314,7 @@ export const DashboardActivityTable: React.FC = () => {
 
                         {/* Action Badge */}
                         <td data-label="Action" className="py-3 px-3">
-                          {renderAuditActionBadge(log.action)}
+                          {renderAuditActionBadge(retentionAction(log) || log.action)}
                         </td>
 
                         {/* Resident & Document */}
@@ -1329,7 +1363,7 @@ export const DashboardActivityTable: React.FC = () => {
                               <span className="text-[11px] text-zinc-400">—</span>
                             )}
                             {log.reason && (
-                              <p className="text-[10px] text-zinc-500 italic truncate mt-0.5" title={log.reason}>
+                              <p className={`text-[10px] text-zinc-500 italic mt-0.5 ${isRetentionTab ? 'break-words' : 'truncate'}`} title={log.reason}>
                                 "{log.reason}"
                               </p>
                             )}
@@ -1356,15 +1390,15 @@ export const DashboardActivityTable: React.FC = () => {
                 <div className="text-zinc-500 font-medium">
                   Showing <span className="font-bold text-zinc-900">{startAuditIdx + 1}</span> to{' '}
                   <span className="font-bold text-zinc-900">{endAuditIdx}</span> of{' '}
-                  <span className="font-bold text-zinc-900">{totalAuditLogs}</span> audit events
+                  <span className="font-bold text-zinc-900">{totalAuditLogs}</span> {isRetentionTab ? 'retention events' : 'audit events'}
                 </div>
 
                 <CompactPagination
                   page={safeAuditPage}
                   totalPages={totalAuditPages}
-                  onPrevious={() => setAuditPage((p) => Math.max(1, p - 1))}
-                  onNext={() => setAuditPage((p) => Math.min(totalAuditPages, p + 1))}
-                  label="Audit trail"
+                  onPrevious={() => setLogPage((p) => Math.max(1, p - 1))}
+                  onNext={() => setLogPage((p) => Math.min(totalAuditPages, p + 1))}
+                  label={logLabel}
                 />
               </div>
             </>

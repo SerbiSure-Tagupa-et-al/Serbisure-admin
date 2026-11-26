@@ -1,5 +1,6 @@
 import React from 'react';
 import type { VerificationRequest } from '../../types/admin';
+import { PurgedMediaCard } from './PurgedMediaCard';
 
 export function ProfilePhotoReview({ photo, documents, onSelect, onApprove, onReject }: {
   photo: VerificationRequest;
@@ -13,8 +14,9 @@ export function ProfilePhotoReview({ photo, documents, onSelect, onApprove, onRe
   const [message, setMessage] = React.useState('');
   const [confirmReject, setConfirmReject] = React.useState(false);
   const [imageLoaded, setImageLoaded] = React.useState(false);
+  const mediaPurged = Boolean(photo.mediaPurgedAt && !photo.documentImage);
   const review = async (reject: boolean) => {
-    if (busy || !imageLoaded) return;
+    if (busy || mediaPurged || !imageLoaded) return;
     if (reject && !reason.trim()) { setMessage('Please explain what needs to be fixed in the photo.'); return; }
     setBusy(true); setMessage('');
     try {
@@ -32,13 +34,13 @@ export function ProfilePhotoReview({ photo, documents, onSelect, onApprove, onRe
       {documents.map(doc => <button key={doc.id} disabled={busy} type="button" onClick={() => onSelect(doc.id)}
         aria-current={doc.id === photo.id ? 'true' : undefined} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50">{doc.documentType}</button>)}
     </nav>
-    {photo.documentImage ? <img src={photo.documentImage} alt={`${photo.name}'s profile photo`}
+    {mediaPurged ? <PurgedMediaCard purgedAt={photo.mediaPurgedAt!} /> : photo.documentImage ? <img src={photo.documentImage} alt={`${photo.name}'s profile photo`}
       onLoad={() => setImageLoaded(true)} onError={() => { setImageLoaded(false); setMessage('Photo could not load. Refresh the queue before reviewing.'); }}
       className="mx-auto max-h-80 w-full rounded-xl object-contain bg-zinc-50" />
       : <p role="alert">Photo unavailable. Refresh the queue before reviewing.</p>}
     <p className="text-sm font-semibold">Photo status: {status}</p>
     {photo.notes && <p className="rounded-lg bg-amber-50 p-3 text-sm">Reviewer feedback: {photo.notes}</p>}
-    <p className="text-sm text-zinc-600">Check that the face is clear and matches the person's ID. Approving this photo does not approve their other documents.</p>
+    {!mediaPurged && <><p className="text-sm text-zinc-600">Check that the face is clear and matches the person's ID. Approving this photo does not approve their other documents.</p>
     <label className="block text-sm font-medium" htmlFor="photo-rejection-reason">Reason if rejected (required)</label>
     <textarea id="photo-rejection-reason" value={reason} onChange={event => { setReason(event.target.value); setConfirmReject(false); }}
       disabled={busy} maxLength={1000} rows={3} placeholder="For example: The photo is too dark. Please take it in a brighter place."
@@ -55,6 +57,6 @@ export function ProfilePhotoReview({ photo, documents, onSelect, onApprove, onRe
         if (!reason.trim()) setMessage('Please explain what needs to be fixed in the photo.');
         else setConfirmReject(true);
       }} className="rounded-xl border border-rose-300 text-rose-800 px-4 py-3 disabled:opacity-50">Reject Photo</button>
-    </div>
+    </div></>}
   </section>;
 }

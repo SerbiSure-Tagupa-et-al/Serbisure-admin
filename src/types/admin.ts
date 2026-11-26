@@ -89,8 +89,10 @@ export interface VerificationRequest {
   validUntil?: string | null;
   primaryStatus?: VerificationStatus;
   recordStatus: 'Clear Record' | 'Under Review' | 'Flagged';
-  documentImage: string;
-  documentImageBack?: string;
+  documentImage: string | null;
+  documentImageBack?: string | null;
+  mediaPurgedAt?: string | null;
+  secondaryMediaPurgedAt?: string | null;
   hasDocuments?: boolean;
   hasLguCoverage?: boolean;
   userId?: string;
@@ -100,12 +102,12 @@ export interface VerificationRequest {
   isPackage?: boolean;
   packageLabel?: string;
   secondaryDocumentId?: string;
-  secondaryDocumentImage?: string;
+  secondaryDocumentImage?: string | null;
   secondaryDocumentType?: string;
   secondaryDocumentNumber?: string;
   secondaryIssuedDate?: string;
   secondaryValidityDate?: string;
-  secondaryStatus?: string;
+  secondaryStatus?: VerificationStatus | null;
   secondaryNotes?: string;
   secondaryOcrData?: {
     full_name?: string;
