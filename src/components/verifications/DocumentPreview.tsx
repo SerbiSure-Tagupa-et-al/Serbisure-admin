@@ -6,6 +6,7 @@ import { getOptimizedWebpUrl } from '../../utils/imageOptimizer';
 import { groupVerificationApplicants } from '../../data/verificationApplicants';
 import { ReviewerCorrectionsForm } from './ReviewerCorrectionsForm';
 import { ProfilePhotoReview } from './ProfilePhotoReview';
+import { PurgedMediaCard } from './PurgedMediaCard';
 
 const comparisonFields = [
   { key: 'first_name', label: 'First Name' },
@@ -360,6 +361,7 @@ export const DocumentPreview: React.FC = () => {
   const approvalLocked = hasBlockingScreeningFlag && (!overrideChecked || !overrideReason.trim());
 
   const handleApproveById = async (targetId: string, docLabel?: string) => {
+    if (activeMediaPurged) return;
     if (approvalLocked) {
       setFeedbackMessage('Confirm manual override and provide a justification note before approving.');
       return;
@@ -388,6 +390,7 @@ export const DocumentPreview: React.FC = () => {
   };
 
   const handleRejectById = async (targetId: string, reason?: string, docLabel?: string) => {
+    if (activeMediaPurged) return;
     try {
       await rejectVerification(targetId, reason || 'Document criteria not met');
       setFeedbackMessage(`Rejected ${selectedItem.name}'s ${docLabel || 'document'}`);
@@ -407,6 +410,7 @@ export const DocumentPreview: React.FC = () => {
   };
 
   const handleResetById = async (targetId: string, docLabel?: string) => {
+    if (activeMediaPurged) return;
     try {
       await resetVerification(targetId);
       setFeedbackMessage(`Reset ${selectedItem.name}'s ${docLabel || 'document'} to Pending Review`);
@@ -425,7 +429,8 @@ export const DocumentPreview: React.FC = () => {
   };
 
   // Dual-sided or dual-clearance package document resolution
-  const hasSecondary = Boolean(selectedItem.secondaryDocumentImage || selectedItem.documentImageBack);
+  const hasSecondary = Boolean(selectedItem.secondaryDocumentId || selectedItem.secondaryDocumentImage
+    || selectedItem.documentImageBack || selectedItem.secondaryMediaPurgedAt);
   const secondaryImageUrl = selectedItem.secondaryDocumentImage || selectedItem.documentImageBack;
 
   const isHomeowner = selectedItem.role?.toUpperCase() === 'HOMEOWNER';
@@ -449,8 +454,11 @@ export const DocumentPreview: React.FC = () => {
   const secondaryDocLabel = isKasambahayPackage ? 'Police Clearance' : 'Back';
 
   const activeImageUrl = (idSide === 'back' && hasSecondary)
-    ? (secondaryImageUrl || selectedItem.documentImage)
+    ? secondaryImageUrl
     : selectedItem.documentImage;
+  const activePurgedAt = idSide === 'back' && hasSecondary
+    ? selectedItem.secondaryMediaPurgedAt : selectedItem.mediaPurgedAt;
+  const activeMediaPurged = Boolean(activePurgedAt && !activeImageUrl);
 
   // Active OCR Data and active metadata depending on selected tab (front vs back / NBI vs Police)
   const showingSecondary = idSide === 'back' && hasSecondary;
@@ -668,8 +676,8 @@ export const DocumentPreview: React.FC = () => {
           )}
 
           {/* Clean Scanned Image Preview Card */}
-          <div 
-            onClick={() => setShowImageModal(true)}
+          {activeMediaPurged ? <div className="mt-2"><PurgedMediaCard purgedAt={activePurgedAt!} /></div> : <div
+            onClick={() => { if (activeImageUrl) setShowImageModal(true); }}
             className="relative mt-2 rounded-3xl overflow-hidden bg-zinc-100 hover:bg-zinc-200/70 transition-colors group cursor-pointer"
             title="Click to expand full resolution scan"
           >
@@ -693,7 +701,7 @@ export const DocumentPreview: React.FC = () => {
                 <span className="font-medium">No scan image available</span>
               </div>
             )}
-          </div>
+          </div>}
 
           {/* Compact one-line status note below image */}
           {currentDocStatus === 'REJECTED' ? (
@@ -917,7 +925,8 @@ export const DocumentPreview: React.FC = () => {
               </div>
             </div>
 
-            <ReviewerCorrectionsForm key={selectedItem.id} documentId={selectedItem.id} onSaved={refreshReviewData} />
+            {!activeMediaPurged && <ReviewerCorrectionsForm key={showingSecondary ? selectedItem.secondaryDocumentId : selectedItem.id}
+              documentId={showingSecondary && selectedItem.secondaryDocumentId ? selectedItem.secondaryDocumentId : selectedItem.id} onSaved={refreshReviewData} />}
 
             {/* Discrepancies if any */}
             {activeDiscrepancies.length > 0 && (
@@ -937,7 +946,7 @@ export const DocumentPreview: React.FC = () => {
         </div>
 
         {/* Action Buttons & Status Lifecycle Controls */}
-        <div className="mt-6 pt-4 space-y-3">
+        {!activeMediaPurged && <div className="mt-6 pt-4 space-y-3">
           {currentDocStatus === 'REJECTED' ? (
             <div className="space-y-3">
               <div className="p-3.5 bg-rose-50 rounded-2xl text-xs text-rose-800">
@@ -1108,11 +1117,11 @@ export const DocumentPreview: React.FC = () => {
               </div>
             </>
           )}
-        </div>
+        </div>}
       </div>
 
       {/* Full-Screen Zoom Modal for Cloudinary Document Scan */}
-      {showImageModal && activeImageUrl && (
+      {showImageModal && activeImageUrl && !activeMediaPurged && (
         <div className="fixed inset-0 z-50 bg-black/65 flex items-center justify-center p-4">
           <div className="relative flex max-h-[calc(100dvh-2rem)] max-w-4xl w-full flex-col bg-[#F6F5F2] rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-150">
             <div className="shrink-0 p-4 bg-white border-b border-zinc-200/70 text-zinc-950 flex flex-wrap items-center justify-between gap-3">
@@ -1194,11 +1203,13 @@ export const DocumentPreview: React.FC = () => {
           idName: idName,
         }}
         document={{
-          id: selectedItem.id,
+          id: showingSecondary ? selectedItem.secondaryDocumentId : selectedItem.id,
           primaryDocumentId: selectedItem.id,
-          documentType: selectedItem.documentType,
+          documentType: resolvedIdType,
           documentNumber: docNumber,
-          documentImage: selectedItem.documentImage,
+          documentImage: activeImageUrl || null,
+          mediaPurgedAt: activePurgedAt,
+          secondaryMediaPurgedAt: selectedItem.secondaryMediaPurgedAt,
           documentImageBack: selectedItem.documentImageBack,
           isPackage: selectedItem.isPackage,
           packageLabel: selectedItem.packageLabel,
@@ -1212,7 +1223,7 @@ export const DocumentPreview: React.FC = () => {
           secondaryNotes: selectedItem.secondaryNotes,
           secondaryOcrData: selectedItem.secondaryOcrData,
           status: selectedItem.status,
-          primaryStatus: selectedItem.primaryStatus,
+          primaryStatus: currentDocStatus,
           notes: selectedItem.notes,
           issuedDate: selectedItem.issuedDate,
           validityDate: selectedItem.validityDate,

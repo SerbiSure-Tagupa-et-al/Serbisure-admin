@@ -18,9 +18,10 @@ export const VerificationDocumentRow: React.FC<Props> = ({ document, selected, o
   const [reason, setReason] = useState(document.screening?.suggested_rejection_reason || '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const mediaPurged = Boolean(document.mediaPurgedAt && !document.documentImage);
   const hasBlockingFlag = Boolean(document.screening?.has_blocking_flag) && document.status !== 'VERIFIED';
   const decide = async (action: 'approve' | 'reject' | 'reset') => {
-    if (busy) return;
+    if (busy || mediaPurged) return;
     setBusy(true); setError(null);
     try {
       if (action === 'approve') await onApprove(document.id);
@@ -41,12 +42,13 @@ export const VerificationDocumentRow: React.FC<Props> = ({ document, selected, o
           <span className="min-w-0">
             <span className="block text-xs font-semibold text-zinc-900">{document.documentType}</span>
             <span className="mt-1 block text-[11px] text-zinc-500">{document.submittedDate}</span>
+            {mediaPurged && <span className="mt-1 block text-[11px] font-medium text-amber-800">Image Removed Under RA 10173</span>}
           </span>
         </button>
         <VerificationStatusBadge status={document.isExpired && document.status !== 'REJECTED' ? 'EXPIRED' : document.status} />
         <div className="verification-document-actions flex flex-wrap items-center gap-2" aria-busy={busy}>
           <button type="button" onClick={onReview} className="px-2 py-2 text-xs font-semibold text-zinc-600 hover:text-zinc-950 cursor-pointer">Review</button>
-          {document.status === 'VERIFIED' ? (
+          {!mediaPurged && (document.status === 'VERIFIED' ? (
             <button type="button" disabled={busy} onClick={() => void decide('reset')} className="rounded-full bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-700 disabled:opacity-50 cursor-pointer">Re-open</button>
           ) : (
             <>
@@ -61,7 +63,7 @@ export const VerificationDocumentRow: React.FC<Props> = ({ document, selected, o
                 </button>
               )}
             </>
-          )}
+          ))}
         </div>
       </div>
       {hasBlockingFlag && document.screening?.blocking_reasons?.[0] && (
@@ -72,7 +74,7 @@ export const VerificationDocumentRow: React.FC<Props> = ({ document, selected, o
       )}
       {document.isExpired && <p className="mt-2 text-xs text-orange-800">Expired on {document.validityDate}. {document.status === 'REJECTED' ? 'Renewal requested.' : 'Process expirations to request a renewed clearance.'}</p>}
       {document.status === 'REJECTED' && document.notes && <p className="mt-2 text-xs text-rose-700 break-words">{document.notes}</p>}
-      {rejecting && (
+      {!mediaPurged && rejecting && (
         <form className="mt-3 flex flex-wrap items-center gap-2" onSubmit={event => { event.preventDefault(); void decide('reject'); }}>
           <input aria-label={`Rejection reason for ${document.documentType}`} placeholder="Reason for rejection (optional)" value={reason} onChange={event => setReason(event.target.value)} disabled={busy} className="min-w-0 flex-1 rounded-xl border border-zinc-200 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-orange-200" />
           <button type="button" onClick={() => setRejecting(false)} disabled={busy} className="px-2 py-2 text-xs text-zinc-500 cursor-pointer">Cancel</button>

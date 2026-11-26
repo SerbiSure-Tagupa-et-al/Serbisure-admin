@@ -5,7 +5,7 @@ const { create, act } = require('react-test-renderer');
 const loader = require('./source-loader.cjs');
 const text = node => typeof node === 'string' ? node : (node.children || []).map(text).join('');
 
-function activity(t, role, customBookings) {
+function activity(t, role, customBookings, customAuditLogs) {
   const exported = {};
   const state = {
     currentRole: role, selectedBarangay: 'Agusan', setActiveNav() {}, isLoadingDashboardActivity: false, isLoadingAuditLogs: false,
@@ -19,6 +19,7 @@ function activity(t, role, customBookings) {
     auditLogs: [{ log_id: 'log', actor_name: 'Reviewing Officer', actor_role: 'ADMIN', actor_barangay: 'Agusan', target_name: 'Document Applicant', target_barangay: 'Agusan', action: 'APPROVED', document_type: 'police_clearance', previous_status: 'PENDING', new_status: 'VERIFIED', created_at: '2026-10-20T08:00:00Z', reason: 'Reviewed submitted document' }],
   };
   if (customBookings) state.bookings = customBookings;
+  if (customAuditLogs) state.auditLogs = customAuditLogs;
   const { DashboardActivityTable } = loader({
     'src/context/AdminContext.tsx': { useAdmin: () => state },
     jspdf: class {
@@ -101,4 +102,73 @@ test('clearance and audit cards retain all record details when switching tabs an
   assert.deepEqual(f.rows()[0].findAllByType('td').map(node => node.props['data-label']), ['Official', 'Action', 'Resident', 'Change', 'Recorded']);
   f.search('no matching record');
   assert.match(text(f.view.root), /No audit logs matching/);
+});
+
+const retentionLogs = () => {
+  const codes = ['retention_cron_run', 'retention_media_purged', 'retention_media_retired', 'retention_account_closed'];
+  return Array.from({ length: 11 }, (_, index) => ({
+    log_id: `retention-${index}`, actor_name: 'System / Automated', actor_role: 'System',
+    target_name: index === 10 ? 'All Verification Media (RA 10173)' : `Resident ${index}`,
+    target_barangay: index < 8 ? 'Brgy. Agusan' : index < 10 ? 'Carmen' : null,
+    action: 'UPDATED', document_type: index === 10 ? 'Retention Policy' : 'nbi_clearance',
+    previous_status: 'Scheduled', new_status: 'Completed', created_at: '2026-11-26T18:00:00Z',
+    reason: `Retention record ${index}`, metadata: { reason_code: codes[index % codes.length], category: `category-${index}` },
+  }));
+};
+
+for (const role of ['ADMIN', 'SUPERADMIN']) test(`${role} retention tab separates audit events, scopes residents and paginates exactly five rows`, t => {
+  const logs = [...retentionLogs(), { log_id: 'review', actor_name: 'Review Officer', action: 'APPROVED',
+    target_name: 'Reviewed Resident', target_barangay: 'Agusan', document_type: 'police_clearance', reason: 'Official approval' }];
+  const f = activity(t, role, undefined, logs);
+  assert.match(text(f.view.toJSON()), new RegExp(`RA 10173 Logs \\(${role === 'ADMIN' ? 8 : 11}\\)`));
+  f.click('Audit Trail');
+  assert.equal(f.rows().length, 1);
+  assert.match(text(f.rows()[0]), /Review Officer.*Official approval/);
+  assert.doesNotMatch(text(f.rows()[0]), /Retention record/);
+  f.click('RA 10173 Logs');
+  assert.equal(f.rows().length, 5);
+  assert.match(text(f.rows()[0]), /System \/ Automated.*Cron Run.*Scheduled.*Completed.*Retention record 0/);
+  assert.doesNotMatch(text(f.view.root.findByType('tbody')), /Official approval/);
+  f.click('Next ra 10173 logs page');
+  assert.equal(f.rows().length, role === 'ADMIN' ? 3 : 5);
+  assert.match(text(f.rows()[0]), /Resident 5/);
+  if (role === 'SUPERADMIN') {
+    f.click('Next ra 10173 logs page');
+    assert.equal(f.rows().length, 1);
+  }
+  // Search includes the metadata category and resets pagination.
+  f.search('category-2');
+  assert.equal(f.rows().length, 1);
+  assert.match(text(f.rows()[0]), /Resident 2/);
+  f.search('');
+  assert.equal(f.rows().length, 5);
+  assert.equal(f.view.root.findByProps({ 'aria-label': 'Previous ra 10173 logs page' }).props.disabled, true);
+  f.click('Next ra 10173 logs page');
+  f.click('Audit Trail'); f.click('RA 10173 Logs');
+  assert.match(text(f.rows()[0]), /Resident 0/);
+  for (const query of ['System / Automated', 'Resident 1', 'NBI Clearance', 'Retention record 1', 'Image Purged']) {
+    f.search(query);
+    assert.ok(f.rows().length > 0 && f.rows().length <= 5, query);
+  }
+});
+
+test('retention PDF uses the audit report template, exports all filtered pages and excludes official reviews', async t => {
+  const logs = [...retentionLogs(), { log_id: 'review', action: 'APPROVED', target_name: 'Official review only' }];
+  logs[0].reason = '<script>unsafe</script>';
+  const f = activity(t, 'SUPERADMIN', undefined, logs);
+  f.click('RA 10173 Logs');
+  await f.exportPdf();
+  assert.match(f.exported.filename, /^serbisure-report-ra10173-disposal-logs-\d{4}-\d{2}-\d{2}\.pdf$/);
+  assert.match(f.exported.html, /RA 10173 Verification Media Retention &amp; Disposal Log/);
+  assert.match(f.exported.html, /Official Automated Schedule &amp; Cloud Media Purge Record \(Data Privacy Act Compliance\)/);
+  assert.match(f.exported.html, /report-wrapper.*Official \/ Actor/s);
+  for (const badge of ['Cron Run', 'Image Purged', 'Queued', 'Account Closed']) assert.ok(f.exported.html.includes(badge));
+  assert.match(f.exported.html, /&lt;script&gt;unsafe&lt;\/script&gt;/);
+  assert.doesNotMatch(f.exported.html, /<script>|Official review only/);
+  const body = f.exported.html.match(/<tbody>[\s\S]*?<\/tbody>/)[0];
+  assert.equal((body.match(/<tr>/g) || []).length, 11);
+  f.search('category-3');
+  await f.exportPdf();
+  assert.match(f.exported.html, /Resident 3/);
+  assert.doesNotMatch(f.exported.html, /Resident 4/);
 });

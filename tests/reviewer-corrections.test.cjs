@@ -6,6 +6,72 @@ const { renderToStaticMarkup } = require('react-dom/server');
 const loader = require('./source-loader.cjs');
 const data = loader()('src/data/reviewerCorrections.ts');
 
+const retainedDocument = overrides => ({
+  id: 'retained-doc', userId: 'resident', name: 'Resident', role: 'HOMEOWNER', avatar: '',
+  barangay: 'Agusan', documentType: 'National ID (Front)', rawDocumentType: 'national_id_front',
+  documentNumber: '12345', issuedDate: 'N/A (PhilSys National ID)', validityDate: 'Permanent',
+  status: 'VERIFIED', primaryStatus: 'VERIFIED', recordStatus: 'Clear Record',
+  documentImage: null, mediaPurgedAt: '2026-12-25T00:00:00+08:00', ...overrides,
+});
+
+for (const role of ['ADMIN', 'SUPERADMIN']) test(`${role} purged-document preview preserves status and dates without image-review or edit actions`, () => {
+  const doc = retainedDocument();
+  const state = { currentRole: role, verifications: [doc], selectedVerificationId: doc.id, isComparisonModalOpen: false };
+  const { DocumentPreview } = loader({ 'src/context/AdminContext.tsx': { useAdmin: () => state } })('src/components/verifications/DocumentPreview.tsx');
+  const html = renderToStaticMarkup(React.createElement(DocumentPreview));
+  assert.match(html, /Image Removed Under RA 10173/);
+  assert.match(html, /Dec 25, 2026.*PHT/);
+  assert.match(html, /verification status, reviewer, issue\/expiry dates, and audit trail remain preserved/);
+  assert.match(html, /Validity.*Permanent.*Status.*VERIFIED/);
+  assert.doesNotMatch(html, /Click to Zoom Scan|No scan image available|Edit details|Move to Pending Review|Reset to Review|APPROVE|REJECT|OVERRIDE/);
+  doc.mediaPurgedAt = null;
+  const oldRecord = renderToStaticMarkup(React.createElement(DocumentPreview));
+  assert.doesNotMatch(oldRecord, /Image Removed Under RA 10173/);
+  assert.match(oldRecord, /No scan image available|Edit details/);
+});
+
+test('a purged companion stays selectable and never displays the primary image or offers review actions', t => {
+  const doc = retainedDocument({ documentImage: 'https://example.test/front.jpg', mediaPurgedAt: null,
+    secondaryDocumentId: 'back-doc', secondaryMediaPurgedAt: '2026-12-25T00:00:00+08:00',
+    secondaryDocumentImage: null, secondaryDocumentType: 'National ID (Back)', secondaryStatus: 'VERIFIED' });
+  const state = { verifications: [doc], selectedVerificationId: doc.id, isComparisonModalOpen: false };
+  const { DocumentPreview } = loader({ 'src/context/AdminContext.tsx': { useAdmin: () => state } })('src/components/verifications/DocumentPreview.tsx');
+  let view; act(() => { view = create(React.createElement(DocumentPreview)); });
+  t.after(() => act(() => view.unmount()));
+  const text = node => typeof node === 'string' ? node : (node.children || []).map(text).join('');
+  assert.ok(view.root.findAllByType('img').some(node => node.props.src === doc.documentImage));
+  act(() => view.root.findAllByType('button').find(node => text(node) === 'Back').props.onClick());
+  assert.match(text(view.toJSON()), /Image Removed Under RA 10173/);
+  assert.equal(view.root.findAllByType('img').some(node => node.props.src === doc.documentImage), false);
+  assert.equal(view.root.findAllByType('button').some(node => /Move to Pending Review|Reset|APPROVE|REJECT|Edit details/.test(text(node))), false);
+  act(() => view.root.findAllByType('button').find(node => text(node) === 'Front').props.onClick());
+  assert.doesNotMatch(text(view.toJSON()), /Image Removed Under RA 10173/);
+  assert.ok(view.root.findAllByType('button').some(node => text(node) === 'Edit details'));
+});
+
+test('identity comparison, queue shortcuts and closed-account profile photos show retention removal without review actions', () => {
+  const doc = retainedDocument({ status: 'PENDING / REVIEW', primaryStatus: 'PENDING / REVIEW' });
+  const { IdentityComparisonContent } = loader()('src/components/verifications/IdentityComparisonModal.tsx');
+  const html = renderToStaticMarkup(React.createElement(IdentityComparisonContent, {
+    isOpen: true, onClose() {}, user: { name: 'Resident', role: 'HOMEOWNER', avatar: '' }, document: doc,
+    onApprove() {}, onReject() {}, onReset() {},
+  }));
+  assert.match(html, /Image Removed Under RA 10173/);
+  assert.doesNotMatch(html, /Approve document|Reject document|Re-open document|Both images must load/);
+  const { VerificationDocumentRow } = loader()('src/components/verifications/VerificationDocumentRow.tsx');
+  const row = renderToStaticMarkup(React.createElement(VerificationDocumentRow, {
+    document: doc, selected: true, onReview() {}, onApprove() {}, onReject() {}, onReset() {},
+  }));
+  assert.match(row, /Image Removed Under RA 10173/);
+  assert.doesNotMatch(row, />Approve|>Reject|>Re-open/);
+  const photo = retainedDocument({ documentType: 'Profile Photo', rawDocumentType: 'profile_photo' });
+  const state = { verifications: [photo], selectedVerificationId: photo.id, isComparisonModalOpen: false };
+  const { DocumentPreview } = loader({ 'src/context/AdminContext.tsx': { useAdmin: () => state } })('src/components/verifications/DocumentPreview.tsx');
+  const photoHtml = renderToStaticMarkup(React.createElement(DocumentPreview));
+  assert.match(photoHtml, /Image Removed Under RA 10173.*Photo status: Verified/);
+  assert.doesNotMatch(photoHtml, /Photo unavailable|Approve Photo|Reject Photo|Reason if rejected/);
+});
+
 const snapshot = () => ({
   version: 'a'.repeat(64), document_type: 'police_clearance',
   profile: { first_name: 'Jameszzz', middle_name: null, last_name: 'Santos', date_of_birth: '1998-01-01' },
